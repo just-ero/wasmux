@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Light mode background with media controls -->
+  <defs>
+    <style>
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #f6f8fb; }
+        .fg { fill: #3366cc; }
+      }
+      @media (prefers-color-scheme: dark) {
+        .bg { fill: #111214; }
+        .fg { fill: #7fb0ff; }
+      }
+    </style>
+  </defs>
+  <rect width="32" height="32" rx="4" class="bg"/>
+  <!-- Play/media icon (centered) -->
+  <polygon points="11,8 11,24 21,16" class="fg"/>
+</svg>

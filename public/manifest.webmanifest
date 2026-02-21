@@ -1,0 +1,25 @@
+{
+  "id": "/wasmux/",
+  "name": "wasmux",
+  "short_name": "wasmux",
+  "description": "Browser-based video editor powered by FFmpeg WASM",
+  "start_url": "/wasmux/",
+  "scope": "/wasmux/",
+  "display": "standalone",
+  "background_color": "#0d1118",
+  "theme_color": "#0d1118",
+  "icons": [
+    {
+      "src": "icons/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}
