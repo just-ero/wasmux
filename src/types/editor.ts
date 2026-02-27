@@ -1,0 +1,229 @@
+/**
+ * editor.ts - central type definitions and constants for wasmux.
+ *
+ * every piece of editor state, every option enum, and every shared
+ * constant lives here so that components, stores, and lib modules
+ * all reference the same source of truth. nothing in this file has
+ * side effects - it's pure types + readonly data.
+ */
+
+/* ═══════════════════════════════════════════════════════════════
+ * file & media metadata
+ * ═══════════════════════════════════════════════════════════════ */
+
+/** the user's source file as it lives in memory. */
+export interface NativeWritableFileStream {
+  write: (data: Blob) => Promise<void>
+  close: () => Promise<void>
+}
+
+export interface NativeFileHandle {
+  name: string
+  getFile?: () => Promise<File>
+  createWritable?: () => Promise<NativeWritableFileStream>
+}
+
+export interface MediaFile {
+  /** original filename (e.g. "clip.mp4") */
+  name: string
+  /** size in bytes */
+  size: number
+  /** mime type reported by the browser (may be empty for some formats) */
+  type: string
+  /** a blob:// url created via url.createobjecturl, used by <video> for playback */
+  objectUrl: string
+  /** native file handle when the browser exposes one via the file picker. */
+  sourceHandle?: NativeFileHandle | null
+}
+
+/** one track (video / audio / subtitle) inside the source file. */
+export interface TrackInfo {
+  /** stream index as reported by ffmpeg (0-based) */
+  index: number
+  /** codec name, e.g. "h264", "aac", "subrip" */
+  codec: string
+  /** human-readable label we build from the codec + language if available */
+  label: string
+}
+
+/**
+ * result of probing a file with `ffmpeg -i`.
+ * populated by lib/probe.ts after parsing ffmpeg's stderr output.
+ */
+export interface ProbeResult {
+  duration: number       // total length in seconds
+  width: number          // video width in pixels
+  height: number         // video height in pixels
+  fps: number            // frames per second (0 if no video)
+  videoCodec: string     // e.g. "h264"
+  audioCodec: string     // e.g. "aac"
+  containerBitrate: number // kbps for the whole file/container (0 if unknown)
+  videoBitrate: number   // kbps (0 if unknown)
+  audioBitrate: number   // kbps (0 if unknown)
+  audioSampleRate: number // hz (e.g. 44100)
+  audioChannels: number  // channel count (e.g. 2 for stereo)
+  videoTracks: TrackInfo[]
+  audioTracks: TrackInfo[]
+  subtitleTracks: TrackInfo[]
+  format: string         // container format name, e.g. "mp4", "matroska"
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * editing parameters (non-destructive)
+ *
+ * these are not applied to the source file - they accumulate as
+ * parameters in the zustand store and only materialise when the
+ * user hits export, at which point commandbuilder.ts translates
+ * them into ffmpeg cli arguments.
+ * ═══════════════════════════════════════════════════════════════ */
+
+/** crop rectangle in *source-pixel* coordinates (not display pixels). */
+export interface CropRegion {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** a contiguous included section of the timeline (frame-based). */
+export interface Selection {
+  /** unique identifier so react can key on it. */
+  id: string
+  /** start frame (integer). */
+  start: number
+  /** end frame (integer, inclusive). */
+  end: number
+}
+
+/* ── codec / option enums ──────────────────────────────────── */
+
+export type VideoCodec =
+  | 'copy'          // stream-copy (no re-encode)
+  | 'libx264'       // h.264 / avc
+  | 'libvpx-vp9'    // vp9
+  | 'mpeg4'         // mpeg-4 part 2
+  | 'libtheora'     // theora
+
+export type AudioCodec =
+  | 'copy'
+  | 'aac'
+  | 'libmp3lame'    // mp3
+  | 'libvorbis'     // vorbis
+  | 'libopus'       // opus
+  | 'flac'
+  | 'ac3'           // dolby digital
+
+export type VideoPreset =
+  | 'ultrafast' | 'superfast' | 'veryfast' | 'faster' | 'fast'
+  | 'medium' | 'slow' | 'slower' | 'veryslow'
+
+export type VideoProfile = 'baseline' | 'main' | 'high'
+
+export type VideoTune =
+  | 'film' | 'animation' | 'grain' | 'stillimage'
+  | 'fastdecode' | 'zerolatency'
+  | ''   // empty = no tune
+
+/** all video encoding / transform parameters. */
+export interface VideoProps {
+  codec: VideoCodec
+  preset: VideoPreset
+  crf: number              // constant rate factor, 0 (lossless) - 51 (worst)
+  profile: VideoProfile
+  tune: VideoTune
+  width: number | null     // null = keep source resolution
+  height: number | null
+  fps: number | null       // null = keep source fps
+  speed: number            // playback speed multiplier, 0.25 - 4
+  gifFps: number | null    // null = use gif default
+  gifWidth: number | null  // null = auto
+  gifHeight: number | null // null = auto
+  trackIndex: number | null // which video stream to use (null = no video / audio-only export)
+  subtitleTrackIndex: number | null // burn-in subs (null = none)
+  keepAspectRatio: boolean
+}
+
+/** all audio encoding / transform parameters. */
+export interface AudioProps {
+  codec: AudioCodec
+  bitrate: number   // kbps
+  volume: number    // gain multiplier: 0 = mute, 1 = 100%, 2 = 200%
+  speed: number     // 0.5 - 2x
+  pitch: number     // semitones: -12 to +12
+  trackIndex: number | null // which audio stream (null = muted / video-only)
+}
+
+/** output container format. "source" means keep the input format. */
+export type OutputFormat =
+  | 'source'
+  | 'avi' | 'flv' | 'gif' | 'mkv' | 'mov'
+  | 'mp3' | 'mp4' | 'ogg' | 'wav' | 'webm'
+
+export const OUTPUT_FORMATS = [
+  'avi',
+  'flv',
+  'gif',
+  'mkv',
+  'mov',
+  'mp3',
+  'mp4',
+  'ogg',
+  'wav',
+  'webm',
+] as const satisfies readonly Exclude<OutputFormat, 'source'>[]
+
+/** which tab in the command center is active. */
+export type CommandCenterTab = 'video' | 'audio' | 'console'
+
+/* ═══════════════════════════════════════════════════════════════
+ * ffmpeg engine lifecycle
+ * ═══════════════════════════════════════════════════════════════ */
+
+export type FFmpegStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+/** stages of the file ingestion pipeline. */
+export type IngestionStatus =
+  | 'idle'
+  | 'writing'       // uploading file to wasm fs
+  | 'probing'       // running ffmpeg -i
+  | 'preview'       // trying native playback or transcoding
+  | 'ready'         // everything done
+  | 'error'
+
+/* ═══════════════════════════════════════════════════════════════
+ * supported formats & limits
+ *
+ * supported_extensions controls both the file picker's `accept`
+ * attribute and the validation logic in the global drop handler.
+ * if you add a format here, it's automatically accepted everywhere.
+ * ═══════════════════════════════════════════════════════════════ */
+
+export const SUPPORTED_VIDEO_EXTENSIONS = [
+  '.avi',
+  '.flv',
+  '.gif',
+  '.mkv',
+  '.mov',
+  '.mp4',
+  '.ogv',
+  '.webm',
+] as const
+
+export const SUPPORTED_AUDIO_EXTENSIONS = [
+  '.mp3',
+  '.ogg',
+  '.wav',
+] as const
+
+export const SUPPORTED_EXTENSIONS = [
+  ...SUPPORTED_VIDEO_EXTENSIONS,
+  ...SUPPORTED_AUDIO_EXTENSIONS,
+] as const
+
+/** hard max: wasm 32-bit linear memory can address ~4 gb, but
+ *  practical limit with ffmpeg is ~2 gb because it needs working
+ *  memory on top of the file data. */
+export const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 gb
+
+/** recommended limit for smooth operation on most machines. */
+export const RECOMMENDED_FILE_SIZE = 500 * 1024 * 1024 // 500 mb
