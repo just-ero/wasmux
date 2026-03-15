@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+	--color-bg: var(--wasmux-bg);
+	--color-bg-raised: var(--wasmux-bg-raised);
+	--color-bg-sunken: var(--wasmux-bg-sunken);
+	--color-text: var(--wasmux-text);
+	--color-text-muted: var(--wasmux-text-muted);
+	--color-accent: var(--wasmux-accent);
+	--color-accent-hover: var(--wasmux-accent-hover);
+	--color-border: var(--wasmux-border);
+	--color-error: var(--wasmux-error);
+	--color-ok: var(--wasmux-ok);
+}
