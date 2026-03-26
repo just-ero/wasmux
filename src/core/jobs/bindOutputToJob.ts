@@ -1,6 +1,6 @@
-import { useLogStore } from '../../stores/logStore'
-import type { LogLineType } from '../../stores/logStore'
-import type { OutputSource } from '../output/types'
+import { useLogStore } from '@/stores/logStore'
+import type { LogLineType } from '@/stores/logStore'
+import type { OutputSource } from '@/core/output/types'
 
 function toLogLineType(channel: string): LogLineType {
   if (channel === 'stderr') return 'stderr'

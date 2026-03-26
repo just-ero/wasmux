@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseProgressSeconds } from '../../src/lib/exportFile'
+import { parseProgressSeconds } from '@/lib/exportFile'
 
 describe('parseProgressSeconds', () => {
   it('parses ffmpeg time= output with microsecond precision', () => {

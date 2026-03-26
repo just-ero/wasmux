@@ -1,8 +1,8 @@
 import type { FFmpeg, LogEvent } from '@ffmpeg/ffmpeg'
-import type { LogLineType } from '../stores/logStore'
-import { bindOutputToJob, appendJobOutput } from '../core/jobs/bindOutputToJob'
-import { createFFmpegOutputSource } from '../core/output'
-import type { OutputSource } from '../core/output'
+import type { LogLineType } from '@/stores/logStore'
+import { bindOutputToJob, appendJobOutput } from '@/core/jobs/bindOutputToJob'
+import { createFFmpegOutputSource } from '@/core/output'
+import type { OutputSource } from '@/core/output'
 
 export { appendJobOutput }
 

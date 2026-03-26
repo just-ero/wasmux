@@ -1,13 +1,13 @@
 /** file ingest pipeline from ui input to ready preview. */
 
 import { fetchFile } from '@ffmpeg/util'
-import { getFFmpeg, resetFFmpeg } from './ffmpeg'
-import { probeFile } from './probe'
-import { useEditorStore } from '../stores/editorStore'
-import { useLogStore } from '../stores/logStore'
-import type { NativeFileHandle } from '../types/editor'
-import type { ProbeResult } from '../types/editor'
-import type { IngestionStatus } from '../types/editor'
+import { getFFmpeg, resetFFmpeg } from '@/lib/ffmpeg'
+import { probeFile } from '@/lib/probe'
+import { useEditorStore } from '@/stores/editorStore'
+import { useLogStore } from '@/stores/logStore'
+import type { NativeFileHandle } from '@/types/editor'
+import type { ProbeResult } from '@/types/editor'
+import type { IngestionStatus } from '@/types/editor'
 
 const INGEST_ID = 'ingest'
 const WRITE_ID = 'ingest-write'
@@ -201,7 +201,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
     } else {
       // try native playback first. if the browser rejects it, we fall back
       // to an mp4 preview transcode so the editor still works.
-      const canPlayNative = await testNativePlayback(objectUrl)
+      const canPlayNative = await canBrowserPlay(objectUrl)
 
       if (canPlayNative) {
         store.setPreviewUrl(objectUrl)
@@ -259,6 +259,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       detail: msg,
       label: `ingest failed: ${file.name}`,
     })
+    throw err instanceof Error ? err : new Error(msg)
   }
 }
 

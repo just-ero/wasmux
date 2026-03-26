@@ -1,1 +1,1 @@
-export * from './bindOutputToJob'
+export * from '@/core/jobs/bindOutputToJob'

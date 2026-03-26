@@ -1,7 +1,7 @@
 /** theme toggle button. */
 
-import type { Theme } from '../../hooks/useTheme'
-import * as Icons from './Icons'
+import type { Theme } from '@/hooks/useTheme'
+import * as Icons from '@/components/shared/Icons'
 
 interface ThemeToggleProps {
   theme: Theme

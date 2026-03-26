@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import type { OutputFormat } from '../../types/editor'
+import type { OutputFormat } from '@/types/editor'
 
 interface FormatOption {
+  kind: 'option'
   format: OutputFormat
   label: string
 }
 
+interface FormatSeparator {
+  kind: 'separator'
+  id: string
+}
+
+export type FormatMenuItem = FormatOption | FormatSeparator
+
 interface Props {
-  options: FormatOption[]
+  options: FormatMenuItem[]
   anchorRef: React.RefObject<HTMLElement | null>
   menuId: string
   onSelect: (format: OutputFormat) => void
@@ -18,6 +26,7 @@ export function FormatMenu({ options, anchorRef, menuId, onSelect, onClose }: Pr
   const menuRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [activeIndex, setActiveIndex] = useState(0)
+  const optionItems = options.filter((item): item is FormatOption => item.kind === 'option')
 
   useEffect(() => {
     setActiveIndex(0)
@@ -76,9 +85,9 @@ export function FormatMenu({ options, anchorRef, menuId, onSelect, onClose }: Pr
       className="format-menu"
       style={{ position: 'fixed', zIndex: 9999 }}
       onKeyDown={(e) => {
-        if (options.length === 0) return
+        if (optionItems.length === 0) return
 
-        const last = options.length - 1
+        const last = optionItems.length - 1
         if (e.key === 'Escape') {
           e.preventDefault()
           e.stopPropagation()
@@ -124,24 +133,32 @@ export function FormatMenu({ options, anchorRef, menuId, onSelect, onClose }: Pr
 
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          const option = options[activeIndex]
+          const option = optionItems[activeIndex]
           if (option) onSelect(option.format)
         }
       }}
     >
-      {options.map(({ format, label }, index) => (
-        <button
-          key={format}
-          ref={(el) => { itemRefs.current[index] = el }}
-          role="menuitem"
-          className="format-menu-item"
-          tabIndex={index === activeIndex ? 0 : -1}
-          onFocus={() => setActiveIndex(index)}
-          onClick={() => onSelect(format)}
-        >
-          {label}
-        </button>
-      ))}
+      {options.map((item) => {
+        if (item.kind === 'separator') {
+          return <div key={item.id} role="separator" className="mx-2 my-1 border-t border-border" />
+        }
+
+        const optionIndex = optionItems.findIndex((option) => option.format === item.format)
+
+        return (
+          <button
+            key={item.format}
+            ref={(el) => { itemRefs.current[optionIndex] = el }}
+            role="menuitem"
+            className="format-menu-item"
+            tabIndex={optionIndex === activeIndex ? 0 : -1}
+            onFocus={() => setActiveIndex(optionIndex)}
+            onClick={() => onSelect(item.format)}
+          >
+            {item.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

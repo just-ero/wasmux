@@ -1,13 +1,13 @@
 /** resizable bottom log/job panel. */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { useLogStore, LOG_MIN_HEIGHT, LOG_PANEL_HEADER_HEIGHT } from '../../stores/logStore'
-import { useEditorStore } from '../../stores/editorStore'
-import type { LogEntry, LogLine } from '../../stores/logStore'
-import { snap } from '../../lib/snap'
-import { isErrorOutputLine } from '../../core/output/normalize'
-import { PropertiesPanel } from '../editor/PropertiesPanel'
-import * as Icons from './Icons'
+import { useLogStore, LOG_MIN_HEIGHT, LOG_PANEL_HEADER_HEIGHT } from '@/stores/logStore'
+import { useEditorStore } from '@/stores/editorStore'
+import type { LogEntry, LogLine } from '@/stores/logStore'
+import { snap } from '@/lib/snap'
+import { isErrorOutputLine } from '@/core/output/normalize'
+import { PropertiesPanel } from '@/components/editor/PropertiesPanel'
+import * as Icons from '@/components/shared/Icons'
 /** snap-to-closed threshold above LOG_MIN_HEIGHT. */
 const SNAP_ZONE = 48
 const DEFAULT_PANEL_HEIGHT = 240
@@ -612,8 +612,12 @@ export function LogPanel() {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
         onKeyDown={onResizeKeyDown}
-        className="flex items-center gap-2 px-2 cursor-ns-resize shrink-0"
-        style={{ height: `${LOG_PANEL_HEADER_HEIGHT}px` }}
+        className="flex items-center cursor-ns-resize shrink-0"
+        style={{
+          height: `${LOG_PANEL_HEADER_HEIGHT}px`,
+          gap: 'var(--wasmux-edge-space)',
+          paddingInline: 'var(--wasmux-edge-space)',
+        }}
         role="separator"
         tabIndex={0}
         aria-label="Resize bottom panel"
@@ -629,7 +633,13 @@ export function LogPanel() {
             <circle cx="12" cy="1" r="0.8" />
           </svg>
         </span>
-        <div className="flex items-center gap-1 text-[12px]" onClick={(e) => e.stopPropagation()} role="tablist" aria-label="Bottom panel tabs">
+        <div
+          className="flex items-center text-[12px]"
+          style={{ gap: 'calc(var(--wasmux-edge-space) / 2)' }}
+          onClick={(e) => e.stopPropagation()}
+          role="tablist"
+          aria-label="Bottom panel tabs"
+        >
           <button
             ref={(el) => { tabRefs.current.video = el }}
             role="tab"
@@ -676,7 +686,7 @@ export function LogPanel() {
             onKeyDown={(e) => onTabKeyDown(e, 'console')}
             title={logTabText}
           >
-            {isClosed && activeSummary ? <span className="inline-flex items-center gap-2"><StatusPrefix status="running" /><span>{logTabText}</span></span> : logTabText}
+            {isClosed && activeSummary ? <span className="inline-flex items-center" style={{ gap: 'var(--wasmux-edge-space)' }}><StatusPrefix status="running" /><span>{logTabText}</span></span> : logTabText}
           </button>
         </div>
         <div className="flex-1" />
@@ -714,7 +724,7 @@ export function LogPanel() {
             aria-label="Operation log"
           >
           {entries.length === 0 ? (
-            <div className="px-3 py-2 text-text-muted">nothing here yet</div>
+            <div className="text-text-muted" style={{ padding: 'var(--wasmux-edge-space)' }}>nothing here yet</div>
           ) : (
             entries.map((entry) => (
               <LogNode key={entry.id} entry={entry} depth={0} highlightedIds={highlightedIds} setHoveredId={setHoveredId} />

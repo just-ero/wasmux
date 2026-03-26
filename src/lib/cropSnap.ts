@@ -1,4 +1,4 @@
-import { snap } from './snap'
+import { snap } from '@/lib/snap'
 
 export type HorizontalAnchor = 'left' | 'center' | 'right'
 export type VerticalAnchor = 'top' | 'center' | 'bottom'

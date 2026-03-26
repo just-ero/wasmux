@@ -1,8 +1,9 @@
-import { OUTPUT_FORMATS } from '../types/editor'
-import type { OutputFormat } from '../types/editor'
+import { OUTPUT_FORMATS } from '@/types/editor'
+import type { OutputFormat } from '@/types/editor'
 
 const OUTPUT_MIME_BY_EXTENSION: Record<Exclude<OutputFormat, 'source'>, string> = {
   avi: 'video/x-msvideo',
+  flac: 'audio/flac',
   flv: 'video/x-flv',
   gif: 'image/gif',
   mkv: 'video/x-matroska',
@@ -10,6 +11,7 @@ const OUTPUT_MIME_BY_EXTENSION: Record<Exclude<OutputFormat, 'source'>, string> 
   mp3: 'audio/mpeg',
   mp4: 'video/mp4',
   ogg: 'video/ogg',
+  ogv: 'video/ogg',
   wav: 'audio/wav',
   webm: 'video/webm',
 }
@@ -46,8 +48,10 @@ function resolveSourceFormatExtension(sourceFormat: string | undefined): Exclude
   if (normalized.includes('avi')) return 'avi'
   if (normalized.includes('mp4') || normalized.includes('isom')) return 'mp4'
   if (normalized.includes('mov') || normalized.includes('quicktime')) return 'mov'
+  if (normalized.includes('ogv')) return 'ogv'
   if (normalized.includes('ogg')) return 'ogg'
   if (normalized.includes('flv')) return 'flv'
+  if (normalized.includes('flac')) return 'flac'
   if (normalized.includes('wav')) return 'wav'
   if (normalized.includes('mp3')) return 'mp3'
   if (normalized.includes('gif')) return 'gif'

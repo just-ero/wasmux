@@ -1,8 +1,8 @@
 /** modal showing keyboard shortcuts. */
 
 import { useEffect, useRef } from 'react'
-import { HOTKEY_HELP, HOTKEYS, matchesHotkey } from '../../lib/hotkeys'
-import { DangerXButton } from './DangerXButton'
+import { HOTKEY_HELP, HOTKEYS, matchesHotkey } from '@/lib/hotkeys'
+import { DangerXButton } from '@/components/shared/DangerXButton'
 
 interface Props {
   isOpen: boolean
@@ -70,7 +70,8 @@ export function KeyboardHelp({ isOpen, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[999] bg-black/50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[999] bg-black/50 flex items-center justify-center"
+      style={{ padding: 'calc(var(--wasmux-edge-space) * 2)' }}
       onClick={onClose}
     >
       <div
@@ -81,18 +82,28 @@ export function KeyboardHelp({ isOpen, onClose }: Props) {
         className="bg-bg-raised rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-border"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-bg-raised border-b border-border p-4 flex items-center justify-between">
+        <div
+          className="sticky top-0 bg-bg-raised border-b border-border flex items-center justify-between"
+          style={{ padding: 'calc(var(--wasmux-edge-space) * 2)' }}
+        >
           <h2 id="keyboard-help-title" className="text-lg font-semibold">Keyboard Shortcuts</h2>
           <DangerXButton ref={closeButtonRef} label="Close (Esc)" onClick={onClose} />
         </div>
 
-        <div className="p-6 space-y-6">
+        <div
+          className="space-y-6"
+          style={{ padding: 'calc(var(--wasmux-edge-space) * 3)' }}
+        >
           {HOTKEY_HELP.map((section) => (
             <section key={section.title}>
               <h3 className="text-sm font-semibold text-accent mb-3">{section.title}</h3>
               <div className="space-y-2 text-sm">
                 {section.entries.map((entry) => (
-                  <div key={`${section.title}-${entry.description}`} className="flex justify-between gap-4">
+                  <div
+                    key={`${section.title}-${entry.description}`}
+                    className="flex justify-between"
+                    style={{ gap: 'calc(var(--wasmux-edge-space) * 2)' }}
+                  >
                     <span>
                       {entry.keys.map((key, index) => (
                         <span key={`${entry.description}-${key}`}>

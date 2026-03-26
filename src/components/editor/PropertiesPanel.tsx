@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import * as Icons from '../shared/Icons'
-import { DangerXButton } from '../shared/DangerXButton'
-import { TrimRibbonVisual } from './TrimRibbonVisual'
-import { useEditorStore } from '../../stores/editorStore'
-import { clampFrame, formatFrameCompact, formatFramePadded, formatTime, frameToTime, timeToFrame } from '../../lib/frameUtils'
-import type { AudioCodec, VideoCodec } from '../../types/editor'
+import * as Icons from '@/components/shared/Icons'
+import { DangerXButton } from '@/components/shared/DangerXButton'
+import { TrimRibbonVisual } from '@/components/editor/TrimRibbonVisual'
+import { useEditorStore } from '@/stores/editorStore'
+import { clampFrame, formatFrameCompact, formatFramePadded, formatTime, frameToTime, timeToFrame } from '@/lib/frameUtils'
+import type { AudioCodec, VideoCodec } from '@/types/editor'
 
 const VIDEO_CODECS: VideoCodec[] = ['copy', 'libx264', 'libvpx-vp9', 'mpeg4', 'libtheora']
 const AUDIO_CODECS: AudioCodec[] = ['copy', 'aac', 'libmp3lame', 'libvorbis', 'libopus', 'flac', 'ac3']
@@ -26,9 +26,9 @@ function GroupTitle({ title }: { title: string }) {
 
 function PropertyRow({ label, labelWidth, children }: { label: string; labelWidth: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-7 items-center gap-3 py-0.5">
+    <div className="flex min-h-7 items-center" style={{ gap: 'calc(var(--wasmux-edge-space) * 1.5)', paddingBlock: 'calc(var(--wasmux-edge-space) / 2)' }}>
       <span className="shrink-0 text-[12px] text-text-muted select-text cursor-text" style={{ width: labelWidth }}>{label}</span>
-      <div className="min-w-0 flex flex-1 flex-wrap items-center gap-2">{children}</div>
+      <div className="min-w-0 flex flex-1 flex-wrap items-center" style={{ gap: 'var(--wasmux-edge-space)' }}>{children}</div>
     </div>
   )
 }
@@ -42,11 +42,11 @@ interface SummaryItem {
 
 function InlineSummary({ items }: { items: SummaryItem[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-y-1 text-[12px] text-text-muted/80 select-text cursor-text">
+    <div className="flex flex-wrap items-center text-[12px] text-text-muted/80 select-text cursor-text" style={{ rowGap: 'calc(var(--wasmux-edge-space) / 2)' }}>
       {items.map((item, index) => (
-        <div key={item.id} className="inline-flex items-center gap-1">
-          {index > 0 && <span className="px-1 text-text-muted/70">/</span>}
-          <span className="inline-flex items-center gap-1" title={item.title}>
+        <div key={item.id} className="inline-flex items-center" style={{ gap: 'calc(var(--wasmux-edge-space) / 2)' }}>
+          {index > 0 && <span className="text-text-muted/70" style={{ paddingInline: 'calc(var(--wasmux-edge-space) / 2)' }}>/</span>}
+          <span className="inline-flex items-center" style={{ gap: 'calc(var(--wasmux-edge-space) / 2)' }} title={item.title}>
             <span>{item.text}</span>
             {item.showInfoIcon && <Icons.UiInfo className="cursor-default" />}
           </span>
@@ -103,6 +103,7 @@ function PropertiesPanelImpl() {
   const start = sel?.start ?? 0
   const end = sel?.end ?? Math.max(0, totalFrames - 1)
   const effectiveCrop = crop ?? { x: 0, y: 0, width: probe?.width ?? 0, height: probe?.height ?? 0 }
+  const hasVideoTrackSelected = videoProps.trackIndex !== null
   const inText = showFrames ? formatFrameCompact(start) : formatTime(fps > 0 ? frameToTime(start, fps) : 0, duration)
   const outText = showFrames ? formatFrameCompact(end) : formatTime(fps > 0 ? frameToTime(end, fps) : 0, duration)
   const trimDisplayInText = showFrames ? formatFramePadded(start, totalFrames) : inText
@@ -209,23 +210,25 @@ function PropertiesPanelImpl() {
   return (
     <div className="h-full overflow-y-auto">
       {activeTab === 'video' && (
-        <div className="control-row flex flex-col gap-1">
+        <div className="control-row flex flex-col" style={{ gap: 'calc(var(--wasmux-edge-space) / 2)' }}>
           <InlineSummary items={videoSummary} />
 
           <GroupTitle title="crop + trim" />
-          <PropertyRow label="crop" labelWidth={labelWidth}>
-            <span className="text-[12px] text-text-muted select-text cursor-text">x</span>
-            <input aria-label="Crop X" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.x} onChange={(e) => setCropField('x', e.target.value)} />
-            <span className="text-[12px] text-text-muted select-text cursor-text">y</span>
-            <input aria-label="Crop Y" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.y} onChange={(e) => setCropField('y', e.target.value)} />
-            <span className="text-[12px] text-text-muted select-text cursor-text">w</span>
-            <input aria-label="Crop width" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.width} onChange={(e) => setCropField('width', e.target.value)} />
-            <span className="text-[12px] text-text-muted select-text cursor-text">h</span>
-            <input aria-label="Crop height" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.height} onChange={(e) => setCropField('height', e.target.value)} />
-            {crop && (
-              <DangerXButton label="Clear crop (Esc)" onClick={() => setCrop(null)} />
-            )}
-          </PropertyRow>
+          {hasVideoTrackSelected && (
+            <PropertyRow label="crop" labelWidth={labelWidth}>
+              <span className="text-[12px] text-text-muted select-text cursor-text">x</span>
+              <input aria-label="Crop X" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.x} onChange={(e) => setCropField('x', e.target.value)} />
+              <span className="text-[12px] text-text-muted select-text cursor-text">y</span>
+              <input aria-label="Crop Y" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.y} onChange={(e) => setCropField('y', e.target.value)} />
+              <span className="text-[12px] text-text-muted select-text cursor-text">w</span>
+              <input aria-label="Crop width" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.width} onChange={(e) => setCropField('width', e.target.value)} />
+              <span className="text-[12px] text-text-muted select-text cursor-text">h</span>
+              <input aria-label="Crop height" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.height} onChange={(e) => setCropField('height', e.target.value)} />
+              {crop && (
+                <DangerXButton label="Clear crop (Esc)" onClick={() => setCrop(null)} />
+              )}
+            </PropertyRow>
+          )}
           <PropertyRow label="trim" labelWidth={labelWidth}>
             <span className="shrink-0 text-text-muted select-text cursor-text">[</span>
             <input aria-label="Trim in" className="control-field tabular-nums text-center" style={{ width: trimFieldWidth, textAlign: 'center' }} value={trimInValue} onChange={(e) => setTrimInValue(e.target.value)} onBlur={commitTrimIn} onKeyDown={(e) => { if (e.key === 'Enter') commitTrimIn(); if (e.key === 'Escape') setTrimInValue(inText) }} />
@@ -254,7 +257,11 @@ function PropertiesPanelImpl() {
               aria-label="Video track"
               className="control-field"
               value={videoProps.trackIndex === null ? 'none' : String(videoProps.trackIndex)}
-              onChange={(e) => setVideoProps({ trackIndex: e.target.value === 'none' ? null : parseInt(e.target.value, 10) })}
+              onChange={(e) => {
+                const nextTrackIndex = e.target.value === 'none' ? null : parseInt(e.target.value, 10)
+                setVideoProps({ trackIndex: nextTrackIndex })
+                if (nextTrackIndex === null) setCrop(null)
+              }}
             >
               <option value="none">none (audio only)</option>
               {probe.videoTracks.map((t) => (
@@ -267,7 +274,7 @@ function PropertiesPanelImpl() {
       )}
 
       {activeTab === 'audio' && (
-        <div className="control-row flex flex-col gap-1">
+        <div className="control-row flex flex-col" style={{ gap: 'calc(var(--wasmux-edge-space) / 2)' }}>
           <InlineSummary items={audioSummary} />
 
           <GroupTitle title="audio output" />

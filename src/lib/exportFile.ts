@@ -1,16 +1,16 @@
 /** run the export pipeline. */
 
-import { getFFmpeg, resetFFmpeg } from './ffmpeg'
-import { buildCommand } from './commandBuilder'
-import { useEditorStore } from '../stores/editorStore'
-import { useLogStore } from '../stores/logStore'
-import type { NativeFileHandle } from '../types/editor'
-import type { OutputFormat } from '../types/editor'
+import { getFFmpeg, resetFFmpeg } from '@/lib/ffmpeg'
+import { buildCommand } from '@/lib/commandBuilder'
+import { useEditorStore } from '@/stores/editorStore'
+import { useLogStore } from '@/stores/logStore'
+import type { NativeFileHandle } from '@/types/editor'
+import type { OutputFormat } from '@/types/editor'
 import type { ProgressEvent } from '@ffmpeg/ffmpeg'
-import { isErrorOutputLine } from '../core/output/normalize'
-import { appendJobOutput, bindFFmpegJobOutput } from './jobOutput'
-import { isSupportedOutputExtension, resolveOutputExtension } from './outputFormats'
-import { showNativeSaveFilePicker, supportsNativeSaveFilePicker } from './fileSystemAccess'
+import { isErrorOutputLine } from '@/core/output/normalize'
+import { appendJobOutput, bindFFmpegJobOutput } from '@/lib/jobOutput'
+import { isSupportedOutputExtension, resolveOutputExtension } from '@/lib/outputFormats'
+import { showNativeSaveFilePicker, supportsNativeSaveFilePicker } from '@/lib/fileSystemAccess'
 
 function getPickerAccept(extension: Exclude<OutputFormat, 'source'>): Record<string, string[]> {
   // use octet-stream so chrome does not silently hide uncommon extensions.

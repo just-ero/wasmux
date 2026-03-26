@@ -1,10 +1,10 @@
 /** hidden file input exposed via an imperative browse() handle. */
 
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react'
-import { SUPPORTED_EXTENSIONS } from '../../types/editor'
-import { validateFile } from '../../lib/fileValidation'
-import { showNativeOpenFilePicker, supportsNativeOpenFilePicker } from '../../lib/fileSystemAccess'
-import type { NativeFileHandle } from '../../types/editor'
+import { SUPPORTED_EXTENSIONS } from '@/types/editor'
+import { validateFile } from '@/lib/fileValidation'
+import { showNativeOpenFilePicker, supportsNativeOpenFilePicker } from '@/lib/fileSystemAccess'
+import type { NativeFileHandle } from '@/types/editor'
 
 export interface BrowseInputHandle {
   /** open the native file picker dialog. */

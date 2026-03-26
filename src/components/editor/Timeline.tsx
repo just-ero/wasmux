@@ -1,10 +1,10 @@
 /** timeline ribbon for seek and trim. */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { useEditorStore } from '../../stores/editorStore'
-import { clampFrame, formatTime, frameToTime } from '../../lib/frameUtils'
-import { snap } from '../../lib/snap'
-import { TrimRibbonVisual } from './TrimRibbonVisual'
+import { useEditorStore } from '@/stores/editorStore'
+import { clampFrame, formatTime, frameToTime } from '@/lib/frameUtils'
+import { snap } from '@/lib/snap'
+import { TrimRibbonVisual } from '@/components/editor/TrimRibbonVisual'
 
 type DragTarget = 'seek' | 'in' | 'out' | null
 
@@ -250,7 +250,7 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
       <div
         className="relative h-7 flex-1 min-w-0 select-none overflow-visible"
         style={{
-          cursor: dragTarget === 'in' || dragTarget === 'out' ? 'ew-resize' : 'crosshair',
+          cursor: dragTarget === 'in' || dragTarget === 'out' ? 'ew-resize' : 'default',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

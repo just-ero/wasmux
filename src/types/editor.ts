@@ -133,24 +133,32 @@ export interface AudioProps {
   trackIndex: number | null // which audio stream (null = muted / video-only)
 }
 
-/** output container format. "source" means keep the input format. */
-export type OutputFormat =
-  | 'source'
-  | 'avi' | 'flv' | 'gif' | 'mkv' | 'mov'
-  | 'mp3' | 'mp4' | 'ogg' | 'wav' | 'webm'
-
-export const OUTPUT_FORMATS = [
+export const VIDEO_FORMATS = [
   'avi',
   'flv',
   'gif',
   'mkv',
   'mov',
-  'mp3',
   'mp4',
+  'ogv',
+  'webm',
+] as const
+
+export const AUDIO_FORMATS = [
+  'flac',
+  'mp3',
   'ogg',
   'wav',
-  'webm',
-] as const satisfies readonly Exclude<OutputFormat, 'source'>[]
+] as const
+
+type VideoFormat = (typeof VIDEO_FORMATS)[number]
+type AudioFormat = (typeof AUDIO_FORMATS)[number]
+export type MediaFormat = VideoFormat | AudioFormat
+
+/** output container format. "source" means keep the input format. */
+export type OutputFormat = 'source' | MediaFormat
+
+export const OUTPUT_FORMATS = [...VIDEO_FORMATS, ...AUDIO_FORMATS] as const satisfies readonly Exclude<OutputFormat, 'source'>[]
 
 /** which tab in the command center is active. */
 export type CommandCenterTab = 'video' | 'audio' | 'console'
@@ -170,27 +178,9 @@ export type IngestionStatus =
 
 /* supported formats and limits */
 
-export const SUPPORTED_VIDEO_EXTENSIONS = [
-  '.avi',
-  '.flv',
-  '.gif',
-  '.mkv',
-  '.mov',
-  '.mp4',
-  '.ogv',
-  '.webm',
-] as const
-
-export const SUPPORTED_AUDIO_EXTENSIONS = [
-  '.mp3',
-  '.ogg',
-  '.wav',
-] as const
-
-export const SUPPORTED_EXTENSIONS = [
-  ...SUPPORTED_VIDEO_EXTENSIONS,
-  ...SUPPORTED_AUDIO_EXTENSIONS,
-] as const
+export const SUPPORTED_VIDEO_EXTENSIONS = VIDEO_FORMATS.map((format) => `.${format}`)
+export const SUPPORTED_AUDIO_EXTENSIONS = AUDIO_FORMATS.map((format) => `.${format}`)
+export const SUPPORTED_EXTENSIONS = [...SUPPORTED_VIDEO_EXTENSIONS, ...SUPPORTED_AUDIO_EXTENSIONS]
 
 /** hard max for wasm + ffmpeg memory constraints. */
 export const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 gb

@@ -1,7 +1,7 @@
 /** run ffmpeg commands while collecting and streaming logs. */
 
 import type { FFmpeg } from '@ffmpeg/ffmpeg'
-import { bindFFmpegJobOutput } from './jobOutput'
+import { bindFFmpegJobOutput } from '@/lib/jobOutput'
 
 /** execute ffmpeg and pipe output lines into a log entry. */
 export async function execWithLog(

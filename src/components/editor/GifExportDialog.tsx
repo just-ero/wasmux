@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { DangerXButton } from '../shared/DangerXButton'
-import * as Icons from '../shared/Icons'
+import { DangerXButton } from '@/components/shared/DangerXButton'
+import * as Icons from '@/components/shared/Icons'
 
 interface GifExportDialogProps {
   isOpen: boolean
@@ -169,13 +169,18 @@ export function GifExportDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center"
+      style={{ padding: 'calc(var(--wasmux-edge-space) * 2)' }}
+      onClick={onCancel}
+    >
       <form
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="gif-export-dialog-title"
-        className="w-fit max-w-[92vw] bg-bg-raised border border-border rounded-lg shadow-lg p-2 flex flex-col gap-1.5"
+        className="w-fit max-w-[92vw] bg-bg-raised border border-border rounded-lg shadow-lg flex flex-col"
+        style={{ padding: 'var(--wasmux-edge-space)', gap: 'var(--wasmux-edge-space)' }}
         onClick={(e) => e.stopPropagation()}
         onSubmit={onSubmit}
       >
@@ -184,7 +189,10 @@ export function GifExportDialog({
           <DangerXButton label="Close GIF export" onClick={onCancel} />
         </div>
 
-        <div className="grid grid-cols-[40px_auto] items-start gap-x-2 text-[12px]">
+        <div
+          className="grid grid-cols-[40px_auto] items-start text-[12px]"
+          style={{ columnGap: 'var(--wasmux-edge-space)' }}
+        >
           <span className="text-text-muted leading-7">fps</span>
           <div className="flex flex-col items-start gap-0.5">
             <input
@@ -203,9 +211,12 @@ export function GifExportDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-[40px_auto] items-start gap-x-2 text-[12px]">
+        <div
+          className="grid grid-cols-[40px_auto] items-start text-[12px]"
+          style={{ columnGap: 'var(--wasmux-edge-space)' }}
+        >
           <span className="text-text-muted leading-7">size</span>
-          <div className="flex items-start gap-2">
+          <div className="flex items-start" style={{ gap: 'var(--wasmux-edge-space)' }}>
             <div className="flex flex-col items-start gap-0.5">
               <input
                 type="number"

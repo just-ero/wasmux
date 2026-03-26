@@ -11,7 +11,7 @@ import type {
   ProbeResult,
   Selection,
   VideoProps,
-} from '../types/editor'
+} from '@/types/editor'
 
 /* sensible defaults for a freshly-loaded file */
 const defaultVideoProps: VideoProps = {

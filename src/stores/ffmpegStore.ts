@@ -1,7 +1,7 @@
 /** ffmpeg load status store. */
 
 import { create } from 'zustand'
-import type { FFmpegStatus } from '../types/editor'
+import type { FFmpegStatus } from '@/types/editor'
 
 interface FFmpegState {
   status: FFmpegStatus

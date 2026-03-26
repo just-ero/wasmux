@@ -1,4 +1,4 @@
-import type { NativeFileHandle } from '../types/editor'
+import type { NativeFileHandle } from '@/types/editor'
 
 interface PickerTypeDescriptor {
   description?: string

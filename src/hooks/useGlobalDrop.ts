@@ -1,7 +1,7 @@
 /** window-level drag/drop + paste file handler. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { validateFile } from '../lib/fileValidation'
+import { validateFile } from '@/lib/fileValidation'
 
 interface UseGlobalDropOptions {
   /** called with the validated file when a drop or paste succeeds. */

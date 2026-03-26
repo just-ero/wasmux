@@ -1,10 +1,10 @@
 /** draggable crop rectangle over the video preview. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useEditorStore } from '../../stores/editorStore'
-import type { CropRegion } from '../../types/editor'
-import { snapHorizontalPosition, snapVerticalPosition } from '../../lib/cropSnap'
-import { DangerXButton } from '../shared/DangerXButton'
+import { useEditorStore } from '@/stores/editorStore'
+import type { CropRegion } from '@/types/editor'
+import { snapHorizontalPosition, snapVerticalPosition } from '@/lib/cropSnap'
+import { DangerXButton } from '@/components/shared/DangerXButton'
 
 type DragMode =
   | 'move'

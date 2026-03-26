@@ -1,12 +1,12 @@
 /** playback controls and timeline hotkeys. */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { useEditorStore } from '../../stores/editorStore'
-import { formatTime, formatFramePadded, frameToTime, clampFrame, timeToFrame } from '../../lib/frameUtils'
-import { isFormElement } from '../../lib/domUtils'
-import { HOTKEYS, matchesHotkey } from '../../lib/hotkeys'
-import * as Icons from '../shared/Icons'
-import { ExportControls } from './ExportControls'
+import { useEditorStore } from '@/stores/editorStore'
+import { formatTime, formatFramePadded, frameToTime, clampFrame, timeToFrame } from '@/lib/frameUtils'
+import { isFormElement } from '@/lib/domUtils'
+import { HOTKEYS, matchesHotkey } from '@/lib/hotkeys'
+import * as Icons from '@/components/shared/Icons'
+import { ExportControls } from '@/components/editor/ExportControls'
 
 interface Props {
   videoRef: React.RefObject<HTMLVideoElement | null>
@@ -226,7 +226,7 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
           aria-label="Next frame (.)"
           title="Next frame (.)"
         >
-          <Icons.StepForward width={16} height={16} />
+          <Icons.ChevronRight width={16} height={16} />
         </button>
       </div>
 

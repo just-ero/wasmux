@@ -563,7 +563,7 @@ describe('buildCommand', () => {
   })
 
   describe('all output formats produce valid commands', () => {
-    const formats = ['avi', 'flv', 'gif', 'mkv', 'mov', 'mp3', 'mp4', 'ogg', 'wav', 'webm'] as const
+    const formats = ['avi', 'flac', 'flv', 'gif', 'mkv', 'mov', 'mp3', 'mp4', 'ogg', 'wav', 'webm'] as const
     it.each(formats)('builds a command for .%s', (fmt) => {
       setup()
       const { args, outputName } = buildCommand(fmt)

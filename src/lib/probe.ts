@@ -1,8 +1,8 @@
 /** parse ffmpeg -i stderr into a ProbeResult. */
 
 import type { FFmpeg } from '@ffmpeg/ffmpeg'
-import type { ProbeResult, TrackInfo } from '../types/editor'
-import { execWithLog } from './ffmpegLog'
+import type { ProbeResult, TrackInfo } from '@/types/editor'
+import { execWithLog } from '@/lib/ffmpegLog'
 
 /** probe a wasm-fs file and return parsed metadata. */
 export async function probeFile(

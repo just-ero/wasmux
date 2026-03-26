@@ -1,9 +1,9 @@
 /** build ffmpeg cli args from editor state. */
 
-import { useEditorStore } from '../stores/editorStore'
-import { frameToTime } from './frameUtils'
-import { resolveOutputExtension } from './outputFormats'
-import type { OutputFormat } from '../types/editor'
+import { useEditorStore } from '@/stores/editorStore'
+import { frameToTime } from '@/lib/frameUtils'
+import { resolveOutputExtension } from '@/lib/outputFormats'
+import type { OutputFormat } from '@/types/editor'
 
 function buildAtempoChain(value: number): string[] {
   const target = Math.max(0.25, Math.min(4, value))
@@ -81,7 +81,8 @@ export function buildCommand(format: OutputFormat): BuildResult {
   const inFrame = sel?.start ?? 0
   const outFrame = sel?.end ?? Math.max(0, totalFrames - 1)
   const isTrimmed = inFrame > 0 || outFrame < totalFrames - 1
-  const hasCrop = crop !== null
+  const hasVideoTrack = videoProps.trackIndex !== null
+  const hasCrop = hasVideoTrack && crop !== null
   const sourceW = probe.width
   const sourceH = probe.height
 

@@ -1,8 +1,8 @@
 /** editor video preview with click/drag interactions. */
 
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { useEditorStore } from '../../stores/editorStore'
-import { snap } from '../../lib/snap'
+import { useEditorStore } from '@/stores/editorStore'
+import { snap } from '@/lib/snap'
 
 /* simple animated dots for loading state */
 let _frame = 1

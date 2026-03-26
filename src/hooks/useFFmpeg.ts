@@ -1,9 +1,9 @@
 /** ffmpeg wasm load hook. */
 
 import { useEffect } from 'react'
-import { getFFmpeg } from '../lib/ffmpeg'
-import { useLogStore } from '../stores/logStore'
-import { useFFmpegStore } from '../stores/ffmpegStore'
+import { getFFmpeg } from '@/lib/ffmpeg'
+import { useLogStore } from '@/stores/logStore'
+import { useFFmpegStore } from '@/stores/ffmpegStore'
 
 const ENGINE_ID = 'ffmpeg-engine'
 const DL_ID     = 'ffmpeg-download'
@@ -25,6 +25,25 @@ export function startFFmpegLoad(): Promise<void> {
     if (log.entries.some((e) => e.id === ENGINE_ID)) return
 
     useFFmpegStore.getState().setStatus('loading')
+    let initProgress = 0
+    let initTicker: ReturnType<typeof setInterval> | null = null
+
+    const stopInitTicker = () => {
+      if (!initTicker) return
+      clearInterval(initTicker)
+      initTicker = null
+    }
+
+    const startInitTicker = () => {
+      stopInitTicker()
+      initProgress = 8
+      initTicker = setInterval(() => {
+        initProgress = Math.min(96, initProgress + 2)
+        const s = useLogStore.getState()
+        s.updateEntry(INIT_ID, { progress: initProgress })
+        s.updateEntry(ENGINE_ID, { progress: Math.max(20, initProgress) })
+      }, 250)
+    }
 
     log.addEntry({
       id: ENGINE_ID,
@@ -43,6 +62,7 @@ export function startFFmpegLoad(): Promise<void> {
           progress: 0,
           children: [],
         })
+        useLogStore.getState().updateEntry(ENGINE_ID, { progress: 12 })
       },
       onInitializing() {
         useLogStore.getState().updateEntry(DL_ID, { status: 'done', progress: 100 })
@@ -53,9 +73,12 @@ export function startFFmpegLoad(): Promise<void> {
           progress: 0,
           children: [],
         })
+        useLogStore.getState().updateEntry(ENGINE_ID, { progress: 20 })
+        startInitTicker()
       },
     })
       .then(() => {
+        stopInitTicker()
         const s = useLogStore.getState()
         s.updateEntry(INIT_ID, { status: 'done', progress: 100 })
         s.updateEntry(ENGINE_ID, {
@@ -65,8 +88,13 @@ export function startFFmpegLoad(): Promise<void> {
         useFFmpegStore.getState().setStatus('ready')
       })
       .catch((err) => {
+        stopInitTicker()
         const msg = err instanceof Error ? err.message : String(err)
         const s = useLogStore.getState()
+        s.updateEntry(INIT_ID, {
+          status: 'error',
+          detail: msg,
+        })
         s.updateEntry(ENGINE_ID, {
           status: 'error',
           detail: msg,

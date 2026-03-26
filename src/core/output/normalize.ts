@@ -1,4 +1,4 @@
-import type { OutputChannel } from './types'
+import type { OutputChannel } from '@/core/output/types'
 
 export function normalizeOutputChannel(rawType: string | undefined): OutputChannel {
   const t = (rawType ?? '').toLowerCase()

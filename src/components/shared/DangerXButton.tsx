@@ -1,6 +1,6 @@
 import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes } from 'react'
-import * as Icons from './Icons'
+import * as Icons from '@/components/shared/Icons'
 
 interface DangerXButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   label: string

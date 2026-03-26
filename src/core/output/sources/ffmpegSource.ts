@@ -1,6 +1,6 @@
 import type { FFmpeg, LogEvent } from '@ffmpeg/ffmpeg'
-import { normalizeOutputChannel } from '../normalize'
-import type { OutputSource } from '../types'
+import { normalizeOutputChannel } from '@/core/output/normalize'
+import type { OutputSource } from '@/core/output/types'
 
 export function createFFmpegOutputSource(ffmpeg: FFmpeg): OutputSource {
   return {

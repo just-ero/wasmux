@@ -24,12 +24,13 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.error) {
       return (
         <div className="flex items-center justify-center min-h-dvh bg-bg">
-          <div className="text-center max-w-md px-6">
+          <div className="text-center max-w-md" style={{ paddingInline: 'calc(var(--wasmux-edge-space) * 3)' }}>
             <h1 className="text-error text-lg">Something went wrong</h1>
             <p className="text-text-muted mt-2">{this.state.error.message}</p>
             <button
               onClick={() => location.reload()}
-              className="btn mt-4 px-4 py-2"
+              className="btn mt-4"
+              style={{ paddingInline: 'calc(var(--wasmux-edge-space) * 2)', paddingBlock: 'var(--wasmux-edge-space)' }}
             >
               Reload
             </button>

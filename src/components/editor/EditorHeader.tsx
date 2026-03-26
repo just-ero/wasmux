@@ -4,10 +4,10 @@
  * shows: filename, help, theme toggle, close button.
  */
 
-import { useEditorStore } from '../../stores/editorStore'
-import { ThemeToggle } from '../shared/ThemeToggle'
-import type { Theme } from '../../hooks/useTheme'
-import * as Icons from '../shared/Icons'
+import { useEditorStore } from '@/stores/editorStore'
+import { ThemeToggle } from '@/components/shared/ThemeToggle'
+import type { Theme } from '@/hooks/useTheme'
+import * as Icons from '@/components/shared/Icons'
 
 interface Props {
   onClose: () => void
@@ -22,7 +22,10 @@ export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp }: Prop
   if (!file) return null
 
   return (
-    <header className="flex items-center gap-4 px-3 py-1.5 bg-bg-raised border-b border-border shrink-0 min-h-[36px]">
+    <header
+      className="flex items-center bg-bg-raised border-b border-border shrink-0 min-h-[36px]"
+      style={{ padding: 'var(--wasmux-edge-space)', gap: 'calc(var(--wasmux-edge-space) * 2)' }}
+    >
       {/* close / back button */}
       <button
         onClick={onClose}
@@ -30,7 +33,7 @@ export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp }: Prop
         aria-label="Close editor"
         title="Back"
       >
-        <Icons.ChevronLeft width={16} height={16} />
+        <Icons.Chevron width={16} height={16} />
       </button>
 
       {/* filename */}
@@ -38,7 +41,7 @@ export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp }: Prop
         {file.name}
       </span>
 
-      <div className="flex items-center gap-3 text-text-muted ml-auto shrink-0">
+      <div className="flex items-center text-text-muted ml-auto shrink-0" style={{ gap: 'calc(var(--wasmux-edge-space) * 1.5)' }}>
         <button
           onClick={onShowHelp}
           className="btn shrink-0"

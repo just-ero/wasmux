@@ -1,6 +1,6 @@
 /** shared file validation helpers. */
 
-import { MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '../types/editor'
+import { MAX_FILE_SIZE, SUPPORTED_EXTENSIONS } from '@/types/editor'
 
 /** format bytes as kb/mb/gb text. */
 export function formatSize(bytes: number): string {
@@ -16,7 +16,7 @@ export function validateFile(file: File): string | null {
   const dot = file.name.lastIndexOf('.')
   const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : ''
 
-  if (!SUPPORTED_EXTENSIONS.includes(ext as (typeof SUPPORTED_EXTENSIONS)[number])) {
+  if (!SUPPORTED_EXTENSIONS.includes(ext)) {
     return `Unsupported format: ${ext || '(no extension)'}`
   }
   if (file.size > MAX_FILE_SIZE) {

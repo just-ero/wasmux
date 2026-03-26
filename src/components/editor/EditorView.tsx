@@ -1,17 +1,17 @@
 /** top-level editor layout. */
 
 import { useEffect, useRef, useState } from 'react'
-import { useLogStore } from '../../stores/logStore'
-import { useEditorStore } from '../../stores/editorStore'
-import { EditorHeader } from './EditorHeader'
-import { VideoPlayer } from './VideoPlayer'
-import { TransportBar } from './TransportBar'
-import { Timeline } from './Timeline'
-import { CropOverlay } from './CropOverlay'
-import { KeyboardHelp } from '../shared/KeyboardHelp'
-import { HOTKEYS, matchesHotkey } from '../../lib/hotkeys'
-import { isFormElement } from '../../lib/domUtils'
-import type { Theme } from '../../hooks/useTheme'
+import { useLogStore } from '@/stores/logStore'
+import { useEditorStore } from '@/stores/editorStore'
+import { EditorHeader } from '@/components/editor/EditorHeader'
+import { VideoPlayer } from '@/components/editor/VideoPlayer'
+import { TransportBar } from '@/components/editor/TransportBar'
+import { Timeline } from '@/components/editor/Timeline'
+import { CropOverlay } from '@/components/editor/CropOverlay'
+import { KeyboardHelp } from '@/components/shared/KeyboardHelp'
+import { HOTKEYS, matchesHotkey } from '@/lib/hotkeys'
+import { isFormElement } from '@/lib/domUtils'
+import type { Theme } from '@/hooks/useTheme'
 
 interface Props {
   onClose: () => void

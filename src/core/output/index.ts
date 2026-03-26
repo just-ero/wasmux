@@ -1,3 +1,3 @@
-export * from './types'
-export * from './normalize'
-export * from './sources/ffmpegSource'
+export * from '@/core/output/types'
+export * from '@/core/output/normalize'
+export * from '@/core/output/sources/ffmpegSource'

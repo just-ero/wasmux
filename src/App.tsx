@@ -1,22 +1,22 @@
 /** root app shell for landing and editor views. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useTheme } from './hooks/useTheme'
-import { useGlobalDrop } from './hooks/useGlobalDrop'
-import { isFormElement } from './lib/domUtils'
-import { startFFmpegLoad } from './hooks/useFFmpeg'
-import { useEditorStore } from './stores/editorStore'
-import { useLogStore } from './stores/logStore'
-import { useFFmpegStore } from './stores/ffmpegStore'
-import { ingestFile } from './lib/ingest'
-import { cancelIngest, isIngestionActive } from './lib/ingest'
-import { LandingPage } from './components/landing/LandingPage'
-import { DragOverlay } from './components/landing/DragOverlay'
-import { LogPanel } from './components/shared/LogPanel'
-import { EditorView } from './components/editor/EditorView'
-import { BrowseInput } from './components/landing/DropZone'
-import type { BrowseInputHandle } from './components/landing/DropZone'
-import type { NativeFileHandle } from './types/editor'
+import { useTheme } from '@/hooks/useTheme'
+import { useGlobalDrop } from '@/hooks/useGlobalDrop'
+import { isFormElement } from '@/lib/domUtils'
+import { startFFmpegLoad } from '@/hooks/useFFmpeg'
+import { useEditorStore } from '@/stores/editorStore'
+import { useLogStore } from '@/stores/logStore'
+import { useFFmpegStore } from '@/stores/ffmpegStore'
+import { ingestFile } from '@/lib/ingest'
+import { cancelIngest, isIngestionActive } from '@/lib/ingest'
+import { LandingPage } from '@/components/landing/LandingPage'
+import { DragOverlay } from '@/components/landing/DragOverlay'
+import { LogPanel } from '@/components/shared/LogPanel'
+import { EditorView } from '@/components/editor/EditorView'
+import { BrowseInput } from '@/components/landing/DropZone'
+import type { BrowseInputHandle } from '@/components/landing/DropZone'
+import type { NativeFileHandle } from '@/types/editor'
 
 export function App() {
   const { theme, toggle } = useTheme()
@@ -29,17 +29,27 @@ export function App() {
 
   const loadFile = useEditorStore((s) => s.loadFile)
   const reset = useEditorStore((s) => s.reset)
+  const pendingFileRef = useRef<{ file: File; sourceHandle: NativeFileHandle | null } | null>(null)
 
-  /** start ingestion when a file is selected. */
-  const handleFile = useCallback((f: File, sourceHandle?: NativeFileHandle | null) => {
+  const resetToLanding = useCallback(() => {
+    cancelIngest()
+    pendingFileRef.current = null
+
+    const prev = useEditorStore.getState().file
+    if (prev) URL.revokeObjectURL(prev.objectUrl)
+
+    // clear file-scoped logs when returning to landing
+    const logState = useLogStore.getState()
+    const fileScopedEntries = logState.entries.filter(
+      (e) => e.id === 'ingest' || e.id.startsWith('ingest-') || e.id.startsWith('export-'),
+    )
+    fileScopedEntries.forEach((e) => logState.removeEntry(e.id))
+
+    reset()
+  }, [reset])
+
+  const beginIngest = useCallback((f: File, sourceHandle?: NativeFileHandle | null) => {
     setError(null)
-
-    const ffStatus = useFFmpegStore.getState().status
-    if (ffStatus !== 'ready') {
-      void startFFmpegLoad()
-      setError('FFmpeg is loading. Try again once the engine is ready.')
-      return
-    }
 
     // revoke previous object url to avoid leaks.
     const prev = useEditorStore.getState().file
@@ -55,8 +65,25 @@ export function App() {
         videoBitrate: 0, audioBitrate: 0, audioSampleRate: 0, audioChannels: 0,
         videoTracks: [], audioTracks: [], subtitleTracks: [], format: '' },
     )
-    ingestFile(f, objectUrl, sourceHandle ?? null)
-  }, [loadFile])
+    void ingestFile(f, objectUrl, sourceHandle ?? null).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      resetToLanding()
+      setError(message)
+    })
+  }, [loadFile, resetToLanding])
+
+  /** start ingestion when a file is selected. */
+  const handleFile = useCallback((f: File, sourceHandle?: NativeFileHandle | null) => {
+    const ffStatus = useFFmpegStore.getState().status
+    if (ffStatus !== 'ready') {
+      pendingFileRef.current = { file: f, sourceHandle: sourceHandle ?? null }
+      if (ffStatus === 'idle') void startFFmpegLoad()
+      setError('FFmpeg is still loading. file queued and will ingest automatically when ready.')
+      return
+    }
+
+    beginIngest(f, sourceHandle ?? null)
+  }, [beginIngest])
 
   /** handle validation errors from drop, paste, or browse. */
   const handleError = useCallback((msg: string) => {
@@ -70,8 +97,17 @@ export function App() {
   })
 
   useEffect(() => {
-    if (ffmpegStatus === 'ready') setError(null)
-  }, [ffmpegStatus])
+    if (ffmpegStatus !== 'ready') return
+
+    const pending = pendingFileRef.current
+    if (!pending) {
+      setError(null)
+      return
+    }
+
+    pendingFileRef.current = null
+    beginIngest(pending.file, pending.sourceHandle)
+  }, [beginIngest, ffmpegStatus])
 
   // hidden file input ref used to open the os picker.
   const browseRef = useRef<BrowseInputHandle>(null)
@@ -115,18 +151,8 @@ export function App() {
 
   /** close editor and return to landing page. */
   const handleClose = useCallback(() => {
-    cancelIngest()
-
-    const prev = useEditorStore.getState().file
-    if (prev) URL.revokeObjectURL(prev.objectUrl)
-
-    // clear old ingest log entries when returning to landing
-    const logState = useLogStore.getState()
-    const ingestEntries = logState.entries.filter((e) => e.id === 'ingest' || e.id.startsWith('ingest-'))
-    ingestEntries.forEach((e) => logState.removeEntry(e.id))
-
-    reset()
-  }, [reset])
+    resetToLanding()
+  }, [resetToLanding])
 
   useEffect(() => {
     if (!file) return
