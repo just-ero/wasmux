@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { formatSize, validateFile } from '@/lib/fileValidation'
 import { MAX_FILE_SIZE } from '@/types/editor'
 
-/* ── formatsize ──────────────────────────────────────────────── */
-
+/* formatsize */
 describe('formatSize', () => {
   it('formats bytes as KB', () => {
     expect(formatSize(512 * 1024)).toBe('512 KB')
@@ -18,8 +17,7 @@ describe('formatSize', () => {
   })
 })
 
-/* ── validatefile ────────────────────────────────────────────── */
-
+/* validatefile */
 function fakeFile(name: string, size: number): File {
   return new File([new ArrayBuffer(0)], name, { type: '' })
     // file constructor ignores the size of the passed buffer for .size,

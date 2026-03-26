@@ -1,25 +1,4 @@
-/**
- * editorstore.ts - global editor state (zustand).
- *
- * this is the single source of truth for the entire application.
- * every component reads from here; every user action writes here.
- *
- * the editing model is non-destructive: the source file is never
- * modified. instead, editing parameters (crop, selections, codec
- * settings, etc.) accumulate in this store. when the user clicks
- * export, the commandbuilder reads the full state and translates
- * it into ffmpeg cli arguments.
- *
- * sections:
- *   - file / probe:       the loaded source file and its metadata
- *   - selections:         which time ranges to include in output
- *   - crop:               optional crop rectangle (source pixels)
- *   - videoprops:         video encoder / transform settings
- *   - audioprops:         audio encoder / transform settings
- *   - outputformat:       target container format
- *   - activetab:          which command-center tab is shown
- *   - isexporting:        export lifecycle state
- */
+/** global editor state store. */
 
 import { create } from 'zustand'
 import type {
@@ -34,8 +13,7 @@ import type {
   VideoProps,
 } from '../types/editor'
 
-/* ── sensible defaults for a freshly-loaded file ───────────── */
-
+/* sensible defaults for a freshly-loaded file */
 const defaultVideoProps: VideoProps = {
   codec: 'copy',        // stream-copy by default (fastest, lossless)
   preset: 'medium',
@@ -63,14 +41,13 @@ const defaultAudioProps: AudioProps = {
   trackIndex: 0,        // first audio track
 }
 
-/* ── store interface ───────────────────────────────────────── */
-
+/* store interface */
 interface EditorState {
-  // ── source ─────────────────────────────────────────────────
+  // source
   file: MediaFile | null
   probe: ProbeResult | null
 
-  // ── playback / preview ────────────────────────────────────
+  // playback / preview
   /** blob:// url for the preview player (may be transcoded). */
   previewUrl: string | null
   /** total frame count (derived from duration * fps). */
@@ -82,7 +59,7 @@ interface EditorState {
   /** where we are in the ingestion pipeline. */
   ingestionStatus: IngestionStatus
 
-  // ── non-destructive editing parameters ────────────────────
+  // non-destructive editing parameters
   selections: Selection[]     // frame-based ranges included in output
   crop: CropRegion | null     // null = no crop
   cropMode: boolean           // whether the crop overlay is active
@@ -90,13 +67,13 @@ interface EditorState {
   audioProps: AudioProps
   outputFormat: OutputFormat
 
-  // ── ui state ──────────────────────────────────────────────
+  // ui state
   activeTab: CommandCenterTab
   isExporting: boolean
     /** whether the time display shows frames instead of wall-clock time. */
     showFrames: boolean
 
-    // ── actions ───────────────────────────────────────────────
+    // actions
   /** load a new file and reset all editing state. */
   loadFile: (file: MediaFile, probe: ProbeResult) => void
   /** clear everything (back to landing page). */

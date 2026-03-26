@@ -3,8 +3,7 @@ import { buildCommand } from '@/lib/commandBuilder'
 import { useEditorStore } from '@/stores/editorStore'
 import type { ProbeResult, VideoProps, AudioProps, Selection } from '@/types/editor'
 
-/* ── helpers ─────────────────────────────────────────────────── */
-
+/* helpers */
 const defaultProbe: ProbeResult = {
   duration: 10,
   width: 1920,
@@ -84,8 +83,7 @@ beforeEach(() => {
   })
 })
 
-/* ── tests ────────────────────────────────────────────────────── */
-
+/* tests */
 describe('buildCommand', () => {
   it('throws when no file is loaded', () => {
     expect(() => buildCommand('mp4')).toThrow('No file loaded')

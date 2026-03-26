@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useLogStore } from '@/stores/logStore'
 import type { LogEntry } from '@/stores/logStore'
 
-/* ── helpers ─────────────────────────────────────────────────── */
-
+/* helpers */
 function entry(id: string, overrides?: Partial<LogEntry>): LogEntry {
   return { id, label: id, status: 'pending', progress: 0, children: [], ...overrides }
 }
@@ -12,8 +11,7 @@ function reset() {
   useLogStore.setState({ entries: [], panelHeight: 28, collapsedIds: new Set() })
 }
 
-/* ── tests ────────────────────────────────────────────────────── */
-
+/* tests */
 beforeEach(reset)
 
 async function flushOutputBatch(): Promise<void> {

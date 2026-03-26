@@ -1,14 +1,4 @@
-/**
- * themetoggle.tsx - text button to switch between themes.
- *
- * shows a sun icon when in dark mode ("click for light") and a
- * moon icon when in light mode ("click for dark"). has an
- * aria-label describing the action, and advertises the t hotkey
- * via aria-keyshortcuts and a tooltip.
- *
- * the button is intentionally minimal: a bordered square with
- * the icon. no text - the icon + tooltip + aria-label are enough.
- */
+/** theme toggle button. */
 
 import type { Theme } from '../../hooks/useTheme'
 import * as Icons from './Icons'

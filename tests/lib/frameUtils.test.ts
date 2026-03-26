@@ -9,8 +9,7 @@ import {
   formatFramePadded,
 } from '@/lib/frameUtils'
 
-/* ── frametotime ─────────────────────────────────────────────── */
-
+/* frametotime */
 describe('frameToTime', () => {
   it('converts frame 0 to 0 seconds', () => {
     expect(frameToTime(0, 30)).toBe(0)
@@ -33,8 +32,7 @@ describe('frameToTime', () => {
   })
 })
 
-/* ── timetoframe ─────────────────────────────────────────────── */
-
+/* timetoframe */
 describe('timeToFrame', () => {
   it('converts 0 seconds to frame 0', () => {
     expect(timeToFrame(0, 30)).toBe(0)
@@ -62,8 +60,7 @@ describe('timeToFrame', () => {
   })
 })
 
-/* ── clampframe ──────────────────────────────────────────────── */
-
+/* clampframe */
 describe('clampFrame', () => {
   it('clamps negative frame to 0', () => {
     expect(clampFrame(-5, 100)).toBe(0)
@@ -90,8 +87,7 @@ describe('clampFrame', () => {
   })
 })
 
-/* ── formatframe ─────────────────────────────────────────────── */
-
+/* formatframe */
 describe('formatFrame', () => {
   it('formats frame 0 as 00:00:00:00', () => {
     expect(formatFrame(0, 30)).toBe('00:00:00:00')
@@ -121,8 +117,7 @@ describe('formatFrame', () => {
   })
 })
 
-/* ── formattime ──────────────────────────────────────────────── */
-
+/* formattime */
 describe('formatTime', () => {
   it('formats short duration (< 60s)', () => {
     expect(formatTime(5.123, 30)).toBe('5.123')
@@ -145,8 +140,7 @@ describe('formatTime', () => {
   })
 })
 
-/* ── formatframecompact ──────────────────────────────────────── */
-
+/* formatframecompact */
 describe('formatFrameCompact', () => {
   it('formats frame 0', () => {
     expect(formatFrameCompact(0)).toBe('0')
@@ -165,8 +159,7 @@ describe('formatFrameCompact', () => {
   })
 })
 
-/* ── formatframepadded ───────────────────────────────────────── */
-
+/* formatframepadded */
 describe('formatFramePadded', () => {
   it('pads to width of totalFrames-1', () => {
     // totalframes=1000 → max frame 999 → 3 chars wide

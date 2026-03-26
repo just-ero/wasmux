@@ -1,15 +1,9 @@
-/**
- * timeline.tsx - draggable timeline ribbon for trim and seek.
- *
- * layout is [in button] [bar] [out button].
- * people can click to seek, drag handles to trim, and see keyframe marks.
- */
+/** timeline ribbon for seek and trim. */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '../../stores/editorStore'
 import { clampFrame, formatTime, frameToTime } from '../../lib/frameUtils'
 import { snap } from '../../lib/snap'
-import * as Icons from '../shared/Icons'
 import { TrimRibbonVisual } from './TrimRibbonVisual'
 
 type DragTarget = 'seek' | 'in' | 'out' | null
@@ -249,7 +243,7 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
         aria-label="Set in point ([)"
         title="Set in point ([)"
       >
-        <Icons.BracketLeft width={14} height={14} />
+        [
       </button>
 
       {/* timeline bar */}
@@ -290,7 +284,7 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
         aria-label="Set out point (])"
         title="Set out point (])"
       >
-        <Icons.BracketRight width={14} height={14} />
+        ]
       </button>
     </div>
   )

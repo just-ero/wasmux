@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseProbeOutput } from '@/lib/probe'
 
-/* ── helpers ─────────────────────────────────────────────────── */
-
+/* helpers */
 /** realistic ffmpeg -i output for an mp4 file. */
 const SAMPLE_OUTPUT = [
   'ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers',
@@ -15,8 +14,7 @@ const SAMPLE_OUTPUT = [
   '  Stream #0:1(und): Audio: aac (LC), 44100 Hz, stereo, fltp, 128 kb/s',
 ]
 
-/* ── tests ────────────────────────────────────────────────────── */
-
+/* tests */
 describe('parseProbeOutput', () => {
   it('parses duration correctly', () => {
     const result = parseProbeOutput(SAMPLE_OUTPUT)

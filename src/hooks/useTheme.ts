@@ -1,20 +1,4 @@
-/**
- * usetheme.ts - theme state management.
- *
- * manages the light / dark theme toggle. on first load it reads
- * from localstorage (key "wasmux-theme"). if nothing is stored,
- * it falls back to the os preference via `prefers-color-scheme`.
- *
- * when the theme changes:
- *   1. `data-theme` attribute on <html> is updated (css reads it)
- *   2. value is persisted to localstorage
- *
- * the initial theme is also set by an inline <script> in index.html
- * (before react mounts) to avoid a flash of the wrong theme.
- *
- * the app treats theme choice as explicit and persistent, so once
- * initialized we only update theme from user actions.
- */
+/** light/dark theme state. */
 
 import { useCallback, useEffect, useState } from 'react'
 

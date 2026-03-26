@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useEditorStore } from '@/stores/editorStore'
 import type { ProbeResult, Selection, CropRegion } from '@/types/editor'
 
-/* ── helpers ─────────────────────────────────────────────────── */
-
+/* helpers */
 const stubProbe: ProbeResult = {
   duration: 10,
   width: 1920,
@@ -45,8 +44,7 @@ function reset() {
   })
 }
 
-/* ── tests ────────────────────────────────────────────────────── */
-
+/* tests */
 beforeEach(reset)
 
 describe('loadFile', () => {

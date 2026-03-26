@@ -1,12 +1,4 @@
-/**
- * ingest.ts - file ingest pipeline.
- *
- * this is the handoff point from ui file drop/select into the ffmpeg flow.
- * we write the file to the wasm fs, probe it, then prepare a preview.
- *
- * every step updates editor status + log tree so people can see progress.
- * if a second file comes in mid-run, we cancel the old run and start fresh.
- */
+/** file ingest pipeline from ui input to ready preview. */
 
 import { fetchFile } from '@ffmpeg/util'
 import { getFFmpeg, resetFFmpeg } from './ffmpeg'
@@ -51,7 +43,7 @@ export function validateProbeForIngest(probe: ProbeResult): string | null {
   return null
 }
 
-/** keep track of the active ingest run so we can cancel stale work. */
+/** active ingest token for stale-run cancellation. */
 let currentIngestId = 0
 
 export function isIngestionActive(status: IngestionStatus): boolean {
@@ -68,10 +60,7 @@ export function cancelIngest(): void {
   }
 }
 
-/**
- * run the full ingestion pipeline for a dropped/browsed file.
- * assumes ffmpeg is already loaded (caller must gate on ffmpegstore.status === 'ready').
- */
+/** run full ingest flow for one file. */
 export async function ingestFile(file: File, objectUrl: string, sourceHandle?: NativeFileHandle | null): Promise<void> {
   const store = useEditorStore.getState()
   const log = useLogStore.getState()
@@ -255,7 +244,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
 
     if (myId !== currentIngestId) return
 
-    // ── done ───────────────────────────────────────────────
+    // done
     store.setIngestionStatus('ready')
     log.updateEntry(INGEST_ID, {
       status: 'done',
@@ -273,15 +262,10 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
   }
 }
 
-/**
- * test whether the browser can natively play a blob url.
- * creates a temporary <video>, tries to load the source,
- * and resolves true if `canplay` fires within 3 seconds.
- */
-function testNativePlayback(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
+/** test whether a blob url is natively playable. */
+async function canBrowserPlay(url: string): Promise<boolean> {
+  return await new Promise((resolve) => {
     const video = document.createElement('video')
-    video.muted = true
     video.preload = 'auto'
 
     let settled = false

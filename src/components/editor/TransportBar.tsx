@@ -1,17 +1,4 @@
-/**
- * transportbar.tsx - playback controls, time display, and hotkeys.
- *
- * layout: time/duration (left) | centered: ,< play/pause >. | (right spacer)
- *
- * click on time text toggles between time (hh:mm:ss.fff) and frames.
- * raf loop for smooth currentframe updates during playback.
- *
- * hotkeys:
- *   space         = play/pause
- *   , .           = step ±1 frame
- *   arrowleft/right = skip ±5s
- *   [ ] or i / o  = set start/end selection (swaps if end < start)
- */
+/** playback controls and timeline hotkeys. */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '../../stores/editorStore'
@@ -43,7 +30,7 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
   const rafRef = useRef<number>(0)
   const previewUrl = useEditorStore((s) => s.previewUrl)
 
-  // ── raf loop for smooth time sync during playback ────────
+  // raf loop for smooth time sync during playback
   // re-runs when previewurl changes because that's when the <video> actually mounts.
   useEffect(() => {
     const video = videoRef.current
@@ -121,7 +108,7 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
     setSelections([{ id: 'full', start: 0, end: Math.max(0, totalFrames - 1) }])
   }, [setSelections, totalFrames])
 
-  // ── global hotkeys ─────────────────────────────────────
+  // global hotkeys
   useEffect(() => {
     const repeatableHotkeys = new Set<string>([
       HOTKEYS.prevFrame[0],
@@ -184,7 +171,7 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
     }
   }, [togglePlay, stepFrame, skipTime, setIn, setOut, clearSelection])
 
-  // ── format display ─────────────────────────────────────
+  // format display
   const currentSeconds = fps > 0 ? currentFrame / fps : 0
   const timeText = showFrames
     ? `${formatFramePadded(currentFrame, totalFrames)} / ${formatFramePadded(totalFrames > 0 ? totalFrames - 1 : 0, totalFrames)}`

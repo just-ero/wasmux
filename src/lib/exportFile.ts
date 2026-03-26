@@ -1,10 +1,4 @@
-/**
- * exportfile.ts - run the export pipeline.
- *
- * we build ffmpeg args, run encode, read bytes from wasm fs,
- * then hand the result to either the browser download path
- * or the native file picker path.
- */
+/** run the export pipeline. */
 
 import { getFFmpeg, resetFFmpeg } from './ffmpeg'
 import { buildCommand } from './commandBuilder'

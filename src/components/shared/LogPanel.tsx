@@ -1,20 +1,4 @@
-/**
- * logpanel.tsx - resizable log / job tree panel.
- *
- * fixed to the bottom of the viewport. the top edge is a drag
- * handle for resizing. when dragged below a threshold it snaps
- * to a collapsed min-height (just the handle bar). no separate
- * collapse/expand button.
- *
- * each entry is a row that can be clicked/tapped to expand its
- * children. status indicators:
- *   - running  → animated "…" (three dots cycling)
- *   - done     → ✓ checkmark (text-ok colour)
- *   - error    → ✗ cross (text-error colour)
- *   - pending  → dim dash
- *
- * progress is shown as a percentage next to the label when > 0.
- */
+/** resizable bottom log/job panel. */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useLogStore, LOG_MIN_HEIGHT, LOG_PANEL_HEADER_HEIGHT } from '../../stores/logStore'
@@ -24,12 +8,11 @@ import { snap } from '../../lib/snap'
 import { isErrorOutputLine } from '../../core/output/normalize'
 import { PropertiesPanel } from '../editor/PropertiesPanel'
 import * as Icons from './Icons'
-/** how far above log_min_height the panel still snaps closed (~one text row). */
+/** snap-to-closed threshold above LOG_MIN_HEIGHT. */
 const SNAP_ZONE = 48
 const DEFAULT_PANEL_HEIGHT = 240
 
-/* ── global synced dot animation ──────────────────────────── */
-
+/* global synced dot animation */
 const FRAME_COUNT = 4
 let _frame = 0
 let _subs = new Set<() => void>()
@@ -64,8 +47,7 @@ function Dots() {
   )
 }
 
-/* ── status prefix for a single entry ─────────────────────── */
-
+/* status prefix for a single entry */
 function StatusPrefix({ status }: { status: LogEntry['status'] }) {
   switch (status) {
     case 'running':
@@ -255,8 +237,7 @@ function findHighlightedIdsInEntry(entry: LogEntry, hoveredId: string): Set<stri
   return null
 }
 
-/* ── single tree node (recursive) ──────────────────────────── */
-
+/* single tree node (recursive) */
 function LogNode({
   entry,
   depth,
@@ -381,8 +362,7 @@ function LogNode({
   )
 }
 
-/* ── main panel component ──────────────────────────────────── */
-
+/* main panel component */
 export function LogPanel() {
   const entries = useLogStore((s) => s.entries)
   const panelHeight = useLogStore((s) => s.panelHeight)

@@ -1,5 +1,5 @@
 /**
- * editorheader.tsx - top bar of the editor view.
+ * top bar of the editor view.
  *
  * shows: filename, help, theme toggle, close button.
  */

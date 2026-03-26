@@ -1,20 +1,4 @@
-/**
- * cropoverlay.tsx - draggable crop rectangle on the video.
- *
- * renders on top of the videoplayer whenever a crop region exists.
- * no "crop mode" - crop is initiated by dragging on the video
- * (handled in videoplayer), and this overlay just visualizes and
- * allows adjusting it. esc to clear (handled in videoplayer).
- *
- * the overlay is a dark mask with a transparent "hole" for
- * the crop region. edge handles allow resizing.
- *
- * positioning: we compute the actual rendered content rect of the
- * <video> (accounting for object-fit:contain letterboxing and dpi
- * scaling) and position an inner wrapper that exactly matches it.
- * crop percentages are then relative to the video content, not the
- * full container.
- */
+/** draggable crop rectangle over the video preview. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '../../stores/editorStore'

@@ -1,16 +1,4 @@
-/**
- * main.tsx - application entry point.
- *
- * creates the react root and mounts <app /> inside <strictmode>.
- *
- * strictmode enables extra development-time warnings:
- *   - double-invoked effects to catch impure side effects
- *   - warnings for deprecated apis
- *   - ref callback verification
- *
- * `./styles/tailwind.css` provides tailwind + @theme token mapping,
- * and `./styles/main.sass` provides maintainable app styles.
- */
+/** app entry point. */
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

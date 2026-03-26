@@ -1,27 +1,8 @@
-/**
- * logstore.ts - zustand store for the log / job tree.
- *
- * this is separate from editorstore because log entries exist
- * across the entire app lifecycle (landing page included - the
- * very first entry is "loading ffmpeg engine…").
- *
- * the log is a flat list of logentry items. each entry can have
- * children (sub-steps). the tree structure is rendered by the
- * logpanel component.
- *
- * entry statuses control what icon / animation is shown:
- *   - pending   → dim, no icon
- *   - running   → animated "…" dots
- *   - done      → ✓ check
- *   - error     → ✗ cross
- *
- * progress is 0-100 and shown as a percentage when > 0.
- */
+/** log/job tree store. */
 
 import { create } from 'zustand'
 
-/* ── types ─────────────────────────────────────────────────── */
-
+/* types */
 export type LogEntryStatus = 'pending' | 'running' | 'done' | 'error'
 export type LogLineType = 'stderr' | 'stdout' | 'info'
 
@@ -86,8 +67,7 @@ interface LogState {
   initializeConsoleView: () => void
 }
 
-/* ── helpers ───────────────────────────────────────────────── */
-
+/* helpers */
 /** recursively patch an entry by id. returns a new array (immutable). */
 function patchEntry(
   entries: LogEntry[],
@@ -189,8 +169,7 @@ function findEntry(entries: LogEntry[], id: string): LogEntry | null {
   return null
 }
 
-/* ── store ─────────────────────────────────────────────────── */
-
+/* store */
 export const useLogStore = create<LogState>((set) => {
   const pendingOutput = new Map<string, LogLine[]>()
   let flushScheduled = false

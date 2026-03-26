@@ -1,15 +1,4 @@
-/**
- * editorview.tsx - top-level editor layout.
- *
- * vertically stacked layout:
- *   editorheader     - filename, metadata, close, theme toggle
- *   videoplayer      - the <video> with crop overlay
- *   transportbar     - play/pause, frame stepping, time/frame counter
- *   timeline         - scrub bar with draggable trim edges + keyframes
- *
- * the bottom panel overlays the editor, but we still reserve the always-visible
- * header row so controls never sit underneath it.
- */
+/** top-level editor layout. */
 
 import { useEffect, useRef, useState } from 'react'
 import { useLogStore } from '../../stores/logStore'

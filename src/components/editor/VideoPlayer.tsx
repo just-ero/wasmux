@@ -1,13 +1,4 @@
-/**
- * videoplayer.tsx - <video> wrapper for the editor preview.
- *
- * interaction model:
- *   - single click on video = play/pause
- *   - drag on video (no existing crop) = draw crop rectangle
- *   - if crop exists: drag inside crop rect handled by cropoverlay,
- *     drag outside crop = nothing (just click = play/pause)
- *   - esc = clear crop
- */
+/** editor video preview with click/drag interactions. */
 
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useEditorStore } from '../../stores/editorStore'

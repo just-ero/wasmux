@@ -1,13 +1,4 @@
-/**
- * commandbuilder.ts - translate editor state into ffmpeg cli arguments.
- *
- * reads the full editorstore state and produces an array of string
- * arguments suitable for ffmpeg.exec(). handles:
- *   - trim (seek + duration)
- *   - crop
- *   - codec selection (copy vs re-encode)
- *   - format mapping
- */
+/** build ffmpeg cli args from editor state. */
 
 import { useEditorStore } from '../stores/editorStore'
 import { frameToTime } from './frameUtils'
@@ -75,11 +66,7 @@ interface BuildResult {
   needsReencode: boolean
 }
 
-/**
- * build ffmpeg arguments from the current editor state.
- *
- * @param format  the chosen output format (or 'source')
- */
+/** build ffmpeg args for the selected output format. */
 export function buildCommand(format: OutputFormat): BuildResult {
   const state = useEditorStore.getState()
   const { probe, selections, crop, videoProps, audioProps } = state

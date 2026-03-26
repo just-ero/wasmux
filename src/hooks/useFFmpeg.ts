@@ -1,9 +1,4 @@
-/**
- * useffmpeg.ts - react hook for ffmpeg wasm lifecycle.
- *
- * when mounted, this starts ffmpeg load once and mirrors progress
- * into the log store. other code can then gate on ffmpeg status.
- */
+/** ffmpeg wasm load hook. */
 
 import { useEffect } from 'react'
 import { getFFmpeg } from '../lib/ffmpeg'

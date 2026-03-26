@@ -138,7 +138,7 @@ export const ExportControls = memo(function ExportControls() {
           aria-controls={formatMenuOpen ? formatMenuId : undefined}
           title="Export"
         >
-          {isExporting ? <Icons.Spinner width={16} height={16} /> : <Icons.Export width={16} height={16} />}
+          <Icons.Export width={16} height={16} />
         </button>
       </div>
 

@@ -1,15 +1,6 @@
-/**
- * editor.ts - central type definitions and constants for wasmux.
- *
- * every piece of editor state, every option enum, and every shared
- * constant lives here so that components, stores, and lib modules
- * all reference the same source of truth. nothing in this file has
- * side effects - it's pure types + readonly data.
- */
+/** shared editor types and constants. */
 
-/* ═══════════════════════════════════════════════════════════════
- * file & media metadata
- * ═══════════════════════════════════════════════════════════════ */
+/* file and media metadata */
 
 /** the user's source file as it lives in memory. */
 export interface NativeWritableFileStream {
@@ -46,10 +37,7 @@ export interface TrackInfo {
   label: string
 }
 
-/**
- * result of probing a file with `ffmpeg -i`.
- * populated by lib/probe.ts after parsing ffmpeg's stderr output.
- */
+/** parsed metadata from ffmpeg -i output. */
 export interface ProbeResult {
   duration: number       // total length in seconds
   width: number          // video width in pixels
@@ -68,14 +56,7 @@ export interface ProbeResult {
   format: string         // container format name, e.g. "mp4", "matroska"
 }
 
-/* ═══════════════════════════════════════════════════════════════
- * editing parameters (non-destructive)
- *
- * these are not applied to the source file - they accumulate as
- * parameters in the zustand store and only materialise when the
- * user hits export, at which point commandbuilder.ts translates
- * them into ffmpeg cli arguments.
- * ═══════════════════════════════════════════════════════════════ */
+/* editing parameters (non-destructive) */
 
 /** crop rectangle in *source-pixel* coordinates (not display pixels). */
 export interface CropRegion {
@@ -95,8 +76,7 @@ export interface Selection {
   end: number
 }
 
-/* ── codec / option enums ──────────────────────────────────── */
-
+/* codec / option enums */
 export type VideoCodec =
   | 'copy'          // stream-copy (no re-encode)
   | 'libx264'       // h.264 / avc
@@ -175,9 +155,7 @@ export const OUTPUT_FORMATS = [
 /** which tab in the command center is active. */
 export type CommandCenterTab = 'video' | 'audio' | 'console'
 
-/* ═══════════════════════════════════════════════════════════════
- * ffmpeg engine lifecycle
- * ═══════════════════════════════════════════════════════════════ */
+/* ffmpeg engine lifecycle */
 
 export type FFmpegStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -190,13 +168,7 @@ export type IngestionStatus =
   | 'ready'         // everything done
   | 'error'
 
-/* ═══════════════════════════════════════════════════════════════
- * supported formats & limits
- *
- * supported_extensions controls both the file picker's `accept`
- * attribute and the validation logic in the global drop handler.
- * if you add a format here, it's automatically accepted everywhere.
- * ═══════════════════════════════════════════════════════════════ */
+/* supported formats and limits */
 
 export const SUPPORTED_VIDEO_EXTENSIONS = [
   '.avi',
@@ -220,9 +192,7 @@ export const SUPPORTED_EXTENSIONS = [
   ...SUPPORTED_AUDIO_EXTENSIONS,
 ] as const
 
-/** hard max: wasm 32-bit linear memory can address ~4 gb, but
- *  practical limit with ffmpeg is ~2 gb because it needs working
- *  memory on top of the file data. */
+/** hard max for wasm + ffmpeg memory constraints. */
 export const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 gb
 
 /** recommended limit for smooth operation on most machines. */

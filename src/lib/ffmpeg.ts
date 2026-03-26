@@ -1,24 +1,4 @@
-/**
- * ffmpeg.ts - ffmpeg wasm singleton.
- *
- * this module lazily loads the ffmpeg wasm binary the first time
- * getffmpeg() is called. subsequent calls return the same promise
- * (and eventually the same resolved ffmpeg instance).
- *
- * multi-thread vs single-thread:
- *   - if `sharedarraybuffer` is available (requires coop/coep
- *     headers - see vite.config.ts), we load the multi-threaded
- *     core (@ffmpeg/core-mt) which uses web workers for parallel
- *     encoding and is ~2× faster.
- *   - otherwise we fall back to the single-threaded core. the ui
- *     should warn the user about degraded performance.
- *
- * core assets are loaded from bundled same-origin package files.
- * their resolved urls are passed directly to ffmpeg.load().
- *
- * if loading fails (e.g. network error), the promise and instance
- * are reset so the next call to getffmpeg() will retry.
- */
+/** ffmpeg wasm singleton loader. */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import coreJsUrl from '@ffmpeg/core?url'
@@ -60,13 +40,13 @@ function shouldUseMultiThreadCore(): boolean {
   return true
 }
 
-/** the single ffmpeg instance (null until loaded). */
+/** loaded ffmpeg instance, if available. */
 let instance: FFmpeg | null = null
 
-/** shared promise so concurrent callers don't trigger multiple loads. */
+/** shared in-flight load promise. */
 let loadPromise: Promise<FFmpeg> | null = null
 
-/** cached resolved core asset urls reused across resets. */
+/** cached core asset urls reused across resets. */
 let cachedURLs: { coreURL: string; wasmURL: string; workerURL?: string } | null = null
 
 function stripQuery(url: string): string {
@@ -89,17 +69,13 @@ function buildMultiThreadURLs(): { coreURL: string; wasmURL: string; workerURL: 
   }
 }
 
-/** callbacks for logging phase progress during load. */
+/** load lifecycle callbacks. */
 export interface LoadCallbacks {
   onDownloading?: () => void
   onInitializing?: () => void
 }
 
-/**
- * get (or create) the singleton ffmpeg instance.
- * returns a promise that resolves once the wasm binary is loaded
- * and ffmpeg is ready to accept exec() calls.
- */
+/** get or create the singleton ffmpeg instance. */
 export function getFFmpeg(cbs?: LoadCallbacks): Promise<FFmpeg> {
   if (loadPromise) return loadPromise
 
@@ -154,12 +130,8 @@ export function getFFmpeg(cbs?: LoadCallbacks): Promise<FFmpeg> {
   return loadPromise
 }
 
-/**
- * terminate the current ffmpeg instance (kills any in-flight
- * exec/writefile) and clear the singleton so the next getffmpeg()
- * creates a fresh one. cached resolved urls are preserved.
- */
-export function resetFFmpeg(): void {
+/** terminate and clear the current ffmpeg instance. */
+export function resetFFmpeg() {
   if (instance) {
     try { instance.terminate() } catch { /* already terminated */ }
     instance = null
@@ -167,7 +139,7 @@ export function resetFFmpeg(): void {
   loadPromise = null
 }
 
-/** get the already-loaded ffmpeg instance, or null if still loading. */
+/** return loaded ffmpeg instance, or null. */
 export function getLoadedFFmpeg(): FFmpeg | null {
   return instance
 }

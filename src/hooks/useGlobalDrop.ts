@@ -1,26 +1,4 @@
-/**
- * useglobaldrop.ts - global drag-and-drop + paste handler.
- *
- * this hook attaches event listeners to the `window` so that
- * file drops and pastes work anywhere on the page - landing page,
- * editor, doesn't matter. it tracks whether the user is currently
- * dragging a file over the browser window and exposes that as
- * `isdragging` so an overlay can be shown.
- *
- * why window-level?
- *  - the user should never have to aim for a specific zone.
- *  - even after a file is loaded (editor view), dragging a new
- *    file over the window should offer to replace / append.
- *
- * the file validation (extension + size) lives in lib/filevalidation.ts
- * and is reused by both this hook and the browse-file input.
- *
- * dragcount ref:
- *   every child element fires its own dragenter / dragleave pair
- *   as the cursor moves over the page. we keep a counter so we
- *   only clear `isdragging` when the cursor truly leaves the
- *   window (counter hits 0), not when it crosses a child boundary.
- */
+/** window-level drag/drop + paste file handler. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { validateFile } from '../lib/fileValidation'
@@ -56,7 +34,7 @@ export function useGlobalDrop({ onFile, onError }: UseGlobalDropOptions) {
   )
 
   useEffect(() => {
-    // ── drag tracking ──────────────────────────────────────
+    // drag tracking
     const onDragEnter = (e: DragEvent) => {
       if (!hasFilePayload(e.dataTransfer)) return
       e.preventDefault()
@@ -89,7 +67,7 @@ export function useGlobalDrop({ onFile, onError }: UseGlobalDropOptions) {
       if (file) handleFile(file)
     }
 
-    // ── paste tracking ─────────────────────────────────────
+    // paste tracking
     const onPaste = (e: ClipboardEvent) => {
       const file = e.clipboardData?.files[0]
       if (file) {

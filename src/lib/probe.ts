@@ -1,27 +1,10 @@
-/**
- * probe.ts - parse ffmpeg `-i` stderr output into a proberesult.
- *
- * ffmpeg wasm doesn't bundle ffprobe, so we run `ffmpeg -i <file>`
- * which prints stream info to stderr and exits with an error (since
- * no output is specified). we capture the log lines and parse them.
- *
- * example ffmpeg stderr snippets we parse:
- *   duration: 00:01:30.50, start: 0.000000, bitrate: 2500 kb/s
- *   stream #0:0(und): video: h264 (high), yuv420p, 1920x1080, 2000 kb/s, 30 fps
- *   stream #0:1(und): audio: aac (lc), 44100 hz, stereo, fltp, 128 kb/s
- *   stream #0:2(eng): subtitle: subrip
- */
+/** parse ffmpeg -i stderr into a ProbeResult. */
 
 import type { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { ProbeResult, TrackInfo } from '../types/editor'
 import { execWithLog } from './ffmpegLog'
 
-/**
- * probe a file that's already written to the wasm fs.
- * returns a populated proberesult.
- *
- * @param logentryid  if provided, raw ffmpeg output is piped to this logstore entry.
- */
+/** probe a wasm-fs file and return parsed metadata. */
 export async function probeFile(
   ffmpeg: FFmpeg,
   filename: string,
@@ -44,8 +27,7 @@ export async function probeFile(
   return parseProbeOutput(lines)
 }
 
-/* ── regex patterns ────────────────────────────────────────── */
-
+/* regex patterns */
 const reDuration = /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/
 // matches common ffmpeg stream formats, including optional stream-id brackets:
 //   stream #0:0(und): video: ...
@@ -65,7 +47,7 @@ function parseDurationSeconds(hours: string, minutes: string, seconds: string, f
   return parseInt(hours, 10) * 3600 + parseInt(minutes, 10) * 60 + parseInt(seconds, 10) + fractionalSeconds
 }
 
-/** parse collected log lines into a proberesult. */
+/** parse collected log lines into a ProbeResult. */
 export function parseProbeOutput(lines: string[]): ProbeResult {
   const result: ProbeResult = {
     duration: 0,
