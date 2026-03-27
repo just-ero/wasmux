@@ -102,7 +102,8 @@ function serializeLogEntry(entry: LogEntry, depth: number): string[] {
   lines.push(`${indent}${statusGlyph(entry.status)} ${entry.label}${progressText}`)
 
   if (entry.detail) {
-    lines.push(`${indent}  failure reason: ${entry.detail}`)
+    const prefix = entry.status === 'error' ? 'failure reason:' : 'info:'
+    lines.push(`${indent}  ${prefix} ${entry.detail}`)
   }
 
   const hasChildren = entry.children.length > 0
@@ -134,29 +135,27 @@ function serializeLogTree(entries: LogEntry[]): string {
 }
 
 function findActiveLogSummary(entries: LogEntry[]): ActiveLogSummary | null {
-  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
-    const summary = findActiveEntryPath(entries[idx])
-    if (summary) return summary
-  }
-  return null
-}
+  const findWithin = (entry: LogEntry, path: LogEntry[]): ActiveLogSummary | null => {
+    const nextPath = [...path, entry]
 
-function findActiveEntryPath(entry: LogEntry): ActiveLogSummary | null {
-  for (let idx = entry.children.length - 1; idx >= 0; idx -= 1) {
-    const childSummary = findActiveEntryPath(entry.children[idx])
-    if (childSummary) {
-      return {
-        labels: [entry.label, ...childSummary.labels],
-        progress: childSummary.progress,
-      }
+    for (let idx = entry.children.length - 1; idx >= 0; idx -= 1) {
+      const childSummary = findWithin(entry.children[idx], nextPath)
+      if (childSummary) return childSummary
     }
-  }
 
-  if (entry.status === 'running') {
+    if (entry.status !== 'running') return null
+
+    const runningPath = nextPath.filter((item) => item.status === 'running')
+    const progress = runningPath.reduce((max, item) => Math.max(max, item.progress), 0)
     return {
-      labels: [entry.label],
-      progress: entry.progress,
+      labels: runningPath.map((item) => item.label),
+      progress,
     }
+  }
+
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    const summary = findWithin(entries[idx], [])
+    if (summary) return summary
   }
 
   return null
@@ -322,7 +321,7 @@ function LogNode({
         }}
         >
           <div className="border-l-2 border-border pl-2 text-[12px] text-text">
-            <span className="font-medium">failure reason:</span> {entry.detail}
+            <span className="font-medium">{entry.status === 'error' ? 'failure reason:' : 'info:'}</span> {entry.detail}
           </div>
         </div>
       )}
@@ -390,8 +389,8 @@ export function LogPanel() {
   const visualActiveTab = isOpen ? activeTab : null
   const shouldShowActiveSummaryInHeader = visualActiveTab !== 'console'
   const activeSummary = useMemo(
-    () => (shouldShowActiveSummaryInHeader ? findActiveLogSummary(entries) : null),
-    [entries, shouldShowActiveSummaryInHeader],
+    () => findActiveLogSummary(entries),
+    [entries],
   )
   const highlightedIds = useMemo(() => findHighlightedIds(entries, hoveredId), [entries, hoveredId])
   const activeSummaryLabel = activeSummary ? activeSummary.labels.join(' > ') : ''
@@ -682,20 +681,20 @@ export function LogPanel() {
             aria-selected={visualActiveTab === 'console'}
             aria-controls="bottom-panel-content-console"
             tabIndex={visualActiveTab === 'console' ? 0 : -1}
-            className={`${visualActiveTab === 'console' ? 'text-accent font-semibold' : 'text-text-muted'} min-w-0 truncate select-text cursor-pointer bg-transparent border-0 p-0`}
+            className={`${visualActiveTab === 'console' ? 'text-accent font-semibold' : 'text-text-muted'} min-w-0 flex items-center gap-1 select-text cursor-pointer bg-transparent border-0 p-0`}
             style={visualActiveTab === 'console' ? selectedTabStyle : undefined}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => onTabClick('console')}
             onKeyDown={(e) => onTabKeyDown(e, 'console')}
-            title={logTabText}
+            title={shouldShowActiveSummaryInHeader ? logTabText : 'log'}
           >
             {shouldShowActiveSummaryInHeader && activeSummary ? (
-              <span className="inline-flex items-center" style={{ gap: 'var(--wasmux-edge-space)' }}>
+              <>
                 <StatusPrefix status="running" />
-                <span>{activeSummaryLabel}</span>
-                {activeSummaryProgressText && <span className="text-text-muted/75">{activeSummaryProgressText}</span>}
-              </span>
-            ) : logTabText}
+                <span className="min-w-0 truncate">{activeSummaryLabel}</span>
+                {activeSummaryProgressText && <span className="text-text-muted/75 shrink-0">{activeSummaryProgressText}</span>}
+              </>
+            ) : 'log'}
           </button>
         </div>
         <div className="flex-1" />

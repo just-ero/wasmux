@@ -18,6 +18,11 @@ interface BrowseInputProps {
   onError: (message: string) => void
 }
 
+function isNativePickerReadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /could not be read|not.?readable|code\s*=\s*-1/i.test(message)
+}
+
 export const BrowseInput = forwardRef<BrowseInputHandle, BrowseInputProps>(
   function BrowseInput({ onFile, onError }, ref) {
     const inputRef = useRef<HTMLInputElement>(null)
@@ -41,6 +46,12 @@ export const BrowseInput = forwardRef<BrowseInputHandle, BrowseInputProps>(
               onFile(selection.file, selection.handle)
             }
           } catch (error) {
+            if (isNativePickerReadError(error)) {
+              // Fallback to the standard file input when native picker read fails.
+              inputRef.current?.click()
+              onError('Native picker could not read that file. Try the fallback picker or drag and drop the file.')
+              return
+            }
             const message = error instanceof Error ? error.message : String(error)
             onError(message)
           }

@@ -375,18 +375,20 @@ function PropertiesPanelImpl() {
     setTrimOutValue(outText)
   }, [outText, parseTrimValue, setOutPoint, totalFrames, trimOutValue])
 
-  const trimInFieldValue = isTrimmed ? trimInValue : ''
-  const trimOutFieldValue = isTrimmed ? trimOutValue : ''
-
-  const commitTrimInSeconds = useCallback((seconds: number) => {
+  const commitTrimInSeconds = useCallback((seconds: number): number => {
     const frame = clampFrame(fps > 0 ? timeToFrame(seconds, fps) : 0, totalFrames)
     setInPoint(frame)
+    return fps > 0 ? frameToTime(frame, fps) : 0
   }, [fps, setInPoint, totalFrames])
 
-  const commitTrimOutSeconds = useCallback((seconds: number) => {
+  const commitTrimOutSeconds = useCallback((seconds: number): number => {
     const frame = clampFrame(fps > 0 ? timeToFrame(seconds, fps) : 0, totalFrames)
     setOutPoint(frame)
+    return fps > 0 ? frameToTime(frame, fps) : 0
   }, [fps, setOutPoint, totalFrames])
+
+  const trimInFieldValue = isTrimmed ? trimInValue : ''
+  const trimOutFieldValue = isTrimmed ? trimOutValue : ''
 
   const resetTrim = useCallback(() => {
     const maxFrame = Math.max(0, totalFrames - 1)

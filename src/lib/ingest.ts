@@ -16,12 +16,32 @@ const PREVIEW_ID = 'ingest-preview'
 const PROBE_VIDEO_BITRATE_ID = 'ingest-probe-video-bitrate'
 const PROBE_AUDIO_BITRATE_ID = 'ingest-probe-audio-bitrate'
 
+function formatGiB(bytes: number): string {
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
+}
+
 function getMissingBitrateDetail(kind: 'video' | 'audio', containerBitrate: number): string {
   if (containerBitrate > 0) {
     return `FFmpeg did not report a per-stream ${kind} bitrate. The file only exposed container bitrate (${containerBitrate} kb/s), which is total bitrate for the whole file.`
   }
 
   return `FFmpeg did not report ${kind} stream bitrate. This is common with variable-bitrate media or formats that omit per-stream bitrate metadata.`
+}
+
+function normalizeCodecName(codec: string): string {
+  return codec.trim().toLowerCase()
+}
+
+function canLikelyPlayNativeAudioCodec(codec: string): boolean {
+  const normalized = normalizeCodecName(codec)
+  // Conservative allow-list for browser-decoded audio codecs.
+  return normalized === 'aac'
+    || normalized === 'mp3'
+    || normalized === 'opus'
+    || normalized === 'vorbis'
+    || normalized === 'flac'
+    || normalized === 'alac'
+    || normalized.startsWith('pcm_')
 }
 
 export function validateProbeForIngest(probe: ProbeResult): string | null {
@@ -70,6 +90,33 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
   resetFFmpeg()
   log.removeEntry(INGEST_ID)
 
+  let ingestProgress = 5
+  let stageTicker: ReturnType<typeof setInterval> | null = null
+
+  const stopStageTicker = () => {
+    if (!stageTicker) return
+    clearInterval(stageTicker)
+    stageTicker = null
+  }
+
+  const setIngestProgress = (next: number) => {
+    ingestProgress = Math.max(ingestProgress, next)
+    log.updateEntry(INGEST_ID, { progress: ingestProgress })
+  }
+
+  const startStageTicker = (targetMax: number, step = 1, intervalMs = 500) => {
+    stopStageTicker()
+    stageTicker = setInterval(() => {
+      if (myId !== currentIngestId) {
+        stopStageTicker()
+        return
+      }
+      if (ingestProgress >= targetMax) return
+      ingestProgress = Math.min(targetMax, ingestProgress + step)
+      log.updateEntry(INGEST_ID, { progress: ingestProgress })
+    }, intervalMs)
+  }
+
   store.setIngestionStatus('writing')
 
   // create a root log entry so child steps have a shared parent.
@@ -77,7 +124,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
     id: INGEST_ID,
     label: `ingesting ${file.name}`,
     status: 'running',
-    progress: 0,
+    progress: ingestProgress,
     children: [],
   })
 
@@ -93,9 +140,31 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       progress: 0,
       children: [],
     })
+    startStageTicker(28, 1, 400)
 
-    await ffmpeg.writeFile(filename, await fetchFile(file))
+    try {
+      await ffmpeg.writeFile(filename, await fetchFile(file))
+    } catch (writeErr) {
+      const writeMsg = writeErr instanceof Error ? writeErr.message : String(writeErr)
+      if (/could not be read|not.?readable|code\s*=\s*-1/i.test(writeMsg)) {
+        throw new Error(
+          `Source file could not be read by the browser (code=-1). `
+          + `If this is a very large file (${formatGiB(file.size)}), ffmpeg.wasm can fail before the hard cap because ingest keeps multiple in-memory copies. `
+          + 'The Heap Memory graph is main-thread JS heap only and does not include ffmpeg worker wasm memory. '
+          + 'Try selecting it again, use drag and drop, or copy it to a local folder and retry.',
+        )
+      }
+      if (/memory access out of bounds|out of memory|wasm memory/i.test(writeMsg)) {
+        throw new Error(
+          `Not enough wasm memory to ingest ${formatGiB(file.size)}. `
+          + 'In practice, very large files can fail below the nominal 2 GiB cap because ffmpeg.wasm duplicates buffers during write/probe. '
+          + 'Try trimming first, using a smaller intermediate file, or exporting in chunks.',
+        )
+      }
+      throw new Error(`Failed to load source media into wasm file system: ${writeMsg}`)
+    }
     if (myId !== currentIngestId) return
+    setIngestProgress(30)
     log.updateEntry(WRITE_ID, { status: 'done', progress: 100 })
 
     // step 2: probe media metadata.
@@ -121,14 +190,17 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       progress: 0,
       children: [],
     })
+    startStageTicker(63, 1, 350)
 
     const probe = await probeFile(ffmpeg, filename, PROBE_ID)
     if (myId !== currentIngestId) return
+    setIngestProgress(65)
     if (probe.videoTracks.length > 0) {
       if (probe.videoBitrate === 0) {
         log.updateEntry(PROBE_VIDEO_BITRATE_ID, {
-          status: 'error',
+          status: 'done',
           progress: 100,
+          label: 'fetching video bitrate (unavailable)',
           detail: getMissingBitrateDetail('video', probe.containerBitrate),
         })
       } else {
@@ -149,8 +221,9 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
     if (probe.audioTracks.length > 0) {
       if (probe.audioBitrate === 0) {
         log.updateEntry(PROBE_AUDIO_BITRATE_ID, {
-          status: 'error',
+          status: 'done',
           progress: 100,
+          label: 'fetching audio bitrate (unavailable)',
           detail: getMissingBitrateDetail('audio', probe.containerBitrate),
         })
       } else {
@@ -182,6 +255,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
 
     // step 3: pick preview strategy.
     store.setIngestionStatus('preview')
+    setIngestProgress(80)
     log.addChild(INGEST_ID, {
       id: PREVIEW_ID,
       label: 'preparing preview',
@@ -189,9 +263,11 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       progress: 0,
       children: [],
     })
+    startStageTicker(94, 1, 450)
 
     if (probe.videoTracks.length === 0) {
       store.setPreviewUrl(null)
+      setIngestProgress(95)
       log.updateEntry(PREVIEW_ID, {
         status: 'done',
         progress: 100,
@@ -202,23 +278,31 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       // try native playback first. if the browser rejects it, we fall back
       // to an mp4 preview transcode so the editor still works.
       const canPlayNative = await canBrowserPlay(objectUrl)
+      const hasAudioTrack = probe.audioTracks.length > 0
+      const hasLikelyUnsupportedAudioCodec = hasAudioTrack && !canLikelyPlayNativeAudioCodec(probe.audioCodec)
 
-      if (canPlayNative) {
+      const shouldForceTranscodedPreviewForAudio = canPlayNative && hasLikelyUnsupportedAudioCodec
+
+      if (canPlayNative && !shouldForceTranscodedPreviewForAudio) {
         store.setPreviewUrl(objectUrl)
+        setIngestProgress(95)
         log.updateEntry(PREVIEW_ID, {
           status: 'done',
           progress: 100,
           label: 'preparing preview (native)',
+          detail: hasLikelyUnsupportedAudioCodec
+            ? `Source audio codec (${probe.audioCodec || 'unknown'}) may not decode in this browser; playback can be silent. Export path is unaffected.`
+            : undefined,
         })
       } else {
-        // transcode to mp4 for browser preview
+        // transcode audio to aac for browser preview, stream-copy video for speed
+        // limit to first 5 seconds to avoid long encode times
         const previewName = '_preview.mp4'
         try {
           await ffmpeg.exec([
             '-i', filename,
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '28',
+            '-t', '5',
+            '-c:v', 'copy',
             '-c:a', 'aac',
             '-movflags', '+faststart',
             previewName,
@@ -228,10 +312,16 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
           const blob = new Blob([data as BlobPart], { type: 'video/mp4' })
           const previewUrl = URL.createObjectURL(blob)
           store.setPreviewUrl(previewUrl)
+          setIngestProgress(95)
           log.updateEntry(PREVIEW_ID, {
             status: 'done',
             progress: 100,
-            label: 'preparing preview (transcoded)',
+            label: shouldForceTranscodedPreviewForAudio
+              ? 'preparing preview (transcoded for audio compatibility)'
+              : 'preparing preview (transcoded)',
+            detail: shouldForceTranscodedPreviewForAudio
+              ? `Source audio codec (${probe.audioCodec || 'unknown'}) is likely unsupported for native playback; preview audio was transcoded to AAC.`
+              : undefined,
           })
         } catch (previewErr) {
           const previewMsg = previewErr instanceof Error ? previewErr.message : String(previewErr)
@@ -245,12 +335,14 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
     if (myId !== currentIngestId) return
 
     // done
+    stopStageTicker()
     store.setIngestionStatus('ready')
     log.updateEntry(INGEST_ID, {
       status: 'done',
       progress: 100,
     })
   } catch (err) {
+    stopStageTicker()
     if (myId !== currentIngestId) return
     const msg = err instanceof Error ? err.message : String(err)
     store.setIngestionStatus('error')
@@ -260,6 +352,8 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       label: `ingest failed: ${file.name}`,
     })
     throw err instanceof Error ? err : new Error(msg)
+  } finally {
+    stopStageTicker()
   }
 }
 

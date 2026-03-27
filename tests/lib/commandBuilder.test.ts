@@ -32,9 +32,6 @@ const defaultVideoProps: VideoProps = {
   height: null,
   fps: null,
   speed: 1,
-  gifFps: null,
-  gifWidth: null,
-  gifHeight: null,
   trackIndex: 0,
   subtitleTrackIndex: null,
   keepAspectRatio: true,
@@ -124,6 +121,40 @@ describe('buildCommand', () => {
       expect(args[firstMapIdx + 1]).toBe('0:2')
       expect(args[secondMapIdx + 1]).toBe('0:5?')
     })
+
+    it('forces re-encode for webm when source codecs are not webm-compatible', () => {
+      setup({
+        probe: {
+          format: 'mov,mp4,m4a,3gp,3g2,mj2',
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+        },
+        videoProps: { codec: 'copy' },
+        audioProps: { codec: 'copy' },
+      })
+
+      const { args, needsReencode } = buildCommand('webm')
+      expect(needsReencode).toBe(true)
+      expect(args[args.indexOf('-c:v') + 1]).toBe('libvpx')
+      expect(args[args.indexOf('-c:a') + 1]).toBe('libvorbis')
+    })
+
+    it('keeps stream copy for webm when source codecs are webm-compatible', () => {
+      setup({
+        probe: {
+          format: 'matroska,webm',
+          videoCodec: 'vp9',
+          audioCodec: 'opus',
+        },
+        videoProps: { codec: 'copy' },
+        audioProps: { codec: 'copy' },
+      })
+
+      const { args, needsReencode } = buildCommand('webm')
+      expect(needsReencode).toBe(false)
+      expect(args[args.indexOf('-c:v') + 1]).toBe('copy')
+      expect(args[args.indexOf('-c:a') + 1]).toBe('copy')
+    })
   })
 
   describe('trimming', () => {
@@ -204,6 +235,29 @@ describe('buildCommand', () => {
       expect(ssIdx).toBeGreaterThan(iIdx)
       expect(args[args.indexOf('-c:v') + 1]).toBe('libx264')
     })
+
+    it('uses coarse pre-seek plus accurate seek for long re-encode trims', () => {
+      setup({
+        probe: { fps: 30, format: 'mp4' },
+        selections: [{ id: 'full', start: 3800, end: 3920 }],
+        crop: { x: 3, y: 5, width: 641, height: 359 },
+        videoProps: { codec: 'copy' },
+      })
+
+      const { args, needsReencode } = buildCommand('mp4')
+      expect(needsReencode).toBe(true)
+
+      const iIdx = args.indexOf('-i')
+      const firstSsIdx = args.indexOf('-ss')
+      const secondSsIdx = args.indexOf('-ss', firstSsIdx + 1)
+
+      expect(firstSsIdx).toBeGreaterThanOrEqual(0)
+      expect(secondSsIdx).toBeGreaterThanOrEqual(0)
+      expect(firstSsIdx).toBeLessThan(iIdx)
+      expect(secondSsIdx).toBeGreaterThan(iIdx)
+      expect(args[firstSsIdx + 1]).toBe('118.666667')
+      expect(args[secondSsIdx + 1]).toBe('8.000000')
+    })
   })
 
   describe('crop', () => {
@@ -280,11 +334,12 @@ describe('buildCommand', () => {
       expect(args[args.indexOf('-c:v') + 1]).toBe('libx264')
     })
 
-    it('does not add an fps filter when requested fps matches the source', () => {
+    it('adds an fps filter when requested fps matches the source and is explicitly set', () => {
       setup({ videoProps: { fps: 30 } })
       const { args, needsReencode } = buildCommand('mp4')
-      expect(needsReencode).toBe(false)
-      expect(args).not.toContain('-vf')
+      expect(needsReencode).toBe(true)
+      expect(args).toContain('-vf')
+      expect(args[args.indexOf('-vf') + 1]).toContain('fps=30')
     })
 
     it('uses libx264 with preset/crf when video codec is libx264', () => {
@@ -374,6 +429,30 @@ describe('buildCommand', () => {
       expect(args[args.indexOf('-b:v') + 1]).toBe('0')
     })
 
+    it('uses libvpx baseline profile when selected', () => {
+      setup({
+        videoProps: { codec: 'copy' },
+        probe: { format: 'mov,mp4,m4a,3gp,3g2,mj2', videoCodec: 'h264', audioCodec: 'aac' },
+      })
+      const { args } = buildCommand('webm')
+      expect(args[args.indexOf('-c:v') + 1]).toBe('libvpx')
+      expect(args[args.indexOf('-deadline') + 1]).toBe('realtime')
+      expect(args[args.indexOf('-cpu-used') + 1]).toBe('8')
+      expect(args[args.indexOf('-crf') + 1]).toBe('31')
+      expect(args[args.indexOf('-b:v') + 1]).toBe('0')
+      expect(args[args.indexOf('-c:a') + 1]).toBe('libvorbis')
+    })
+
+    it('coerces explicit non-webm codecs to webm-compatible codecs', () => {
+      setup({
+        videoProps: { codec: 'libx264' },
+        audioProps: { codec: 'aac', bitrate: 192 },
+      })
+      const { args } = buildCommand('webm')
+      expect(args[args.indexOf('-c:v') + 1]).toBe('libvpx')
+      expect(args[args.indexOf('-c:a') + 1]).toBe('libvorbis')
+    })
+
     it('normalizes crop to even values for libvpx-vp9', () => {
       setup({
         videoProps: { codec: 'libvpx-vp9' },
@@ -449,35 +528,79 @@ describe('buildCommand', () => {
     it('caps gif fps to the source fps', () => {
       setup({
         probe: { fps: 6 },
-        videoProps: { gifFps: 12 },
+        videoProps: { fps: 12 },
       })
       const { args } = buildCommand('gif')
       expect(args).toContain('-vf')
       expect(args[args.indexOf('-vf') + 1]).toContain('fps=6')
     })
 
-    it('uses exact gif width/height when aspect ratio lock is disabled', () => {
-      setup({
-        videoProps: {
-          gifWidth: 300,
-          gifHeight: 200,
-          keepAspectRatio: false,
-        },
-      })
-      const { args } = buildCommand('gif')
-      expect(args).toContain('-vf')
-      expect(args[args.indexOf('-vf') + 1]).toContain('scale=300:200:flags=fast_bilinear')
-      expect(args[args.indexOf('-vf') + 1]).not.toContain('force_original_aspect_ratio=decrease')
-    })
-
-    it('falls back to default gif fps when configured gif fps is invalid', () => {
+    it('falls back to default gif fps when configured output fps is invalid', () => {
       setup({
         probe: { fps: 24 },
-        videoProps: { gifFps: -5 },
+        videoProps: { fps: -5 },
       })
       const { args } = buildCommand('gif')
       expect(args).toContain('-vf')
       expect(args[args.indexOf('-vf') + 1]).toContain('fps=8')
+    })
+
+    it('applies main resolution override to gif', () => {
+      setup({
+        videoProps: {
+          width: 105,
+          height: 59,
+          keepAspectRatio: true,
+        },
+      })
+      const { args } = buildCommand('gif')
+      expect(args).toContain('-vf')
+      const vf = args[args.indexOf('-vf') + 1]
+      expect(vf).toContain('scale=105:59:flags=fast_bilinear:force_original_aspect_ratio=decrease')
+      // Default gif safety scaler should still run after the explicit resolution stage.
+      expect(vf).toContain('scale=min(480\\,iw):-1:flags=fast_bilinear')
+    })
+
+    it('stretches to exact non-AR resolution when aspect lock is disabled', () => {
+      setup({
+        videoProps: {
+          width: 1000,
+          height: 120,
+          keepAspectRatio: false,
+        },
+      })
+      const { args, needsReencode } = buildCommand('mp4')
+      expect(needsReencode).toBe(true)
+      expect(args).toContain('-vf')
+      expect(args[args.indexOf('-vf') + 1]).toContain('scale=1000:120:flags=fast_bilinear')
+    })
+
+    it('keeps source aspect when only output width is set with aspect lock enabled', () => {
+      setup({
+        videoProps: {
+          width: 640,
+          height: null,
+          keepAspectRatio: true,
+        },
+      })
+      const { args, needsReencode } = buildCommand('mp4')
+      expect(needsReencode).toBe(true)
+      expect(args).toContain('-vf')
+      expect(args[args.indexOf('-vf') + 1]).toContain('scale=640:360:flags=fast_bilinear')
+    })
+
+    it('fits inside width and height bounds when aspect lock is enabled', () => {
+      setup({
+        videoProps: {
+          width: 1000,
+          height: 120,
+          keepAspectRatio: true,
+        },
+      })
+      const { args, needsReencode } = buildCommand('mp4')
+      expect(needsReencode).toBe(true)
+      expect(args).toContain('-vf')
+      expect(args[args.indexOf('-vf') + 1]).toContain('scale=1000:120:flags=fast_bilinear:force_original_aspect_ratio=decrease')
     })
 
     it('builds a conversion command for mkv source to webm with vp9, opus, crop and pitch shift', () => {
@@ -513,6 +636,41 @@ describe('buildCommand', () => {
       expect(af).toContain('asetrate=')
       expect(af).toContain('aresample=48000')
       expect(af).toContain('atempo=')
+    })
+
+    it('downmixes multichannel audio when encoding opus for webm', () => {
+      setup({
+        probe: {
+          format: 'matroska,webm',
+          videoCodec: 'hevc',
+          audioCodec: 'eac3',
+          audioChannels: 6,
+        },
+        videoProps: { codec: 'copy' },
+        audioProps: { codec: 'libopus', bitrate: 128 },
+      })
+
+      const { args } = buildCommand('webm')
+      expect(args[args.indexOf('-c:a') + 1]).toBe('libopus')
+      expect(args).toContain('-ac')
+      expect(args[args.indexOf('-ac') + 1]).toBe('2')
+    })
+
+    it('does not force downmix for opus when source audio is stereo', () => {
+      setup({
+        probe: {
+          format: 'matroska,webm',
+          videoCodec: 'hevc',
+          audioCodec: 'aac',
+          audioChannels: 2,
+        },
+        videoProps: { codec: 'copy' },
+        audioProps: { codec: 'libopus', bitrate: 128 },
+      })
+
+      const { args } = buildCommand('webm')
+      expect(args[args.indexOf('-c:a') + 1]).toBe('libopus')
+      expect(args).not.toContain('-ac')
     })
   })
 

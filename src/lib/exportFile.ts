@@ -26,6 +26,113 @@ function makeStepId(exportId: string, step: 'prepare' | 'encode' | 'finalize' | 
   return `${exportId}:${step}`
 }
 
+const EXPORT_RETRY_POLICY = {
+  stallWarnSeconds: {
+    gif: 120,
+    default: 180,
+  },
+  stallResetSeconds: {
+    gif: 75,
+    default: 0,
+  },
+  gifProgressEstimateFactor: 12,
+} as const
+
+type FallbackKind = 'gif' | 'webm' | 'safe'
+
+interface FallbackPlan {
+  kind: FallbackKind
+  outputName: string
+  args: string[]
+  detail: string
+  message: string
+}
+
+export function isWasmMemoryFault(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error)
+  return /memory access out of bounds|out of memory|wasm memory/i.test(text)
+}
+
+const encodeSuppressedPrefixes = [
+  'ffmpeg version',
+  '  built with',
+  '  configuration:',
+  '  libav',
+  '  libsw',
+  '  libpostproc',
+  '  Metadata:',
+  '    BPS',
+  '    DURATION',
+  '    NUMBER_OF_',
+  '    _STATISTICS_',
+]
+
+function isPrimaryEncodeStreamLine(line: string): boolean {
+  return /Stream\s+#\d+:(0|1)(?:\[[^\]]+\])?(?:\([^)]*\))?:\s+/i.test(line)
+}
+
+/** Filter FFmpeg args to show only non-default options. Preserves -i input and output. */
+function filterDefaultArgs(args: string[]): string[] {
+  const filtered: string[] = []
+  const defaultValues: Record<string, Set<string>> = {
+    '-pix_fmt': new Set(['yuv420p']),
+    '-sn': new Set(['true']),
+    '-dn': new Set(['true']),
+    '-threads': new Set(['0']), // 0 means auto
+  }
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+
+    // Always keep -i (input marker)
+    if (arg === '-i') {
+      filtered.push(arg)
+      if (i + 1 < args.length) {
+        filtered.push(args[++i])
+      }
+      continue
+    }
+
+    // Last item is usually output filename, always keep
+    if (i === args.length - 1) {
+      filtered.push(arg)
+      continue
+    }
+
+    // Check if this is a known default single-value option
+    if (defaultValues[arg] && i + 1 < args.length) {
+      const value = args[i + 1]
+      if (!value.startsWith('-') && defaultValues[arg].has(value)) {
+        i++ // skip the value too
+        continue
+      }
+    }
+
+    filtered.push(arg)
+  }
+
+  return filtered
+}
+
+export function shouldDisplayEncodeLogLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+
+  const lower = trimmed.toLowerCase()
+  if (encodeSuppressedPrefixes.some((prefix) => lower.startsWith(prefix.toLowerCase()))) {
+    return false
+  }
+
+  if (/^Input\s+#\d+,/i.test(trimmed)) return true
+  if (/^Duration:/i.test(trimmed)) return true
+  if (isPrimaryEncodeStreamLine(trimmed)) return true
+  if (/^Stream mapping:/i.test(trimmed)) return true
+  if (/^frame=|\btime=|^progress=|^out_time_ms=/i.test(trimmed)) return true
+  if (isErrorOutputLine(trimmed)) return true
+
+  return false
+}
+
 export function parseProgressSeconds(message: string): number | null {
   const progressMatch = /time=\s*(\d+):(\d+):(\d+)(?:\.(\d+))?/.exec(message)
   if (progressMatch) {
@@ -48,6 +155,45 @@ export function parseProgressSeconds(message: string): number | null {
   return null
 }
 
+function extractFallbackArgs(
+  args: string[],
+  options: {
+    removePairFlags: Set<string>
+    captureVf?: boolean
+    captureAf?: boolean
+  },
+): { passthrough: string[]; sourceVf: string | null; sourceAf: string | null } {
+  const passthrough: string[] = []
+  let sourceVf: string | null = null
+  let sourceAf: string | null = null
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i]
+    if (token === '-y') break
+
+    if (options.captureVf && token === '-vf') {
+      sourceVf = args[i + 1] ?? null
+      i += 1
+      continue
+    }
+
+    if (options.captureAf && token === '-af') {
+      sourceAf = args[i + 1] ?? null
+      i += 1
+      continue
+    }
+
+    if (options.removePairFlags.has(token)) {
+      i += 1
+      continue
+    }
+
+    passthrough.push(token)
+  }
+
+  return { passthrough, sourceVf, sourceAf }
+}
+
 export function buildSafeFallbackArgs(args: string[], fallbackOutputName: string): string[] {
   const removePairFlags = new Set([
     '-c:v',
@@ -61,20 +207,7 @@ export function buildSafeFallbackArgs(args: string[], fallbackOutputName: string
     '-movflags',
   ])
 
-  const passthrough: string[] = []
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i]
-
-    if (token === '-y') break
-
-    if (removePairFlags.has(token)) {
-      i += 1
-      continue
-    }
-
-    passthrough.push(token)
-  }
+  const { passthrough } = extractFallbackArgs(args, { removePairFlags })
 
   return [
     ...passthrough,
@@ -91,26 +224,10 @@ export function buildSafeFallbackArgs(args: string[], fallbackOutputName: string
 }
 
 export function buildGifFallbackArgs(args: string[], fallbackOutputName: string): string[] {
-  const passthrough: string[] = []
-  let sourceVf: string | null = null
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i]
-    if (token === '-y') break
-
-    if (token === '-vf') {
-      sourceVf = args[i + 1] ?? null
-      i += 1
-      continue
-    }
-
-    if (token === '-c:v' || token === '-threads' || token === '-filter_threads') {
-      i += 1
-      continue
-    }
-
-    passthrough.push(token)
-  }
+  const { passthrough, sourceVf } = extractFallbackArgs(args, {
+    removePairFlags: new Set(['-c:v', '-threads', '-filter_threads']),
+    captureVf: true,
+  })
 
   const cropFilter = sourceVf
     ?.split(',')
@@ -128,6 +245,85 @@ export function buildGifFallbackArgs(args: string[], fallbackOutputName: string)
     '-vf', fallbackVf,
     '-y', fallbackOutputName,
   ]
+}
+
+export function buildWebmFallbackArgs(args: string[], fallbackOutputName: string): string[] {
+  const { passthrough, sourceVf, sourceAf } = extractFallbackArgs(args, {
+    removePairFlags: new Set([
+      '-c:v',
+      '-c:a',
+      '-b:v',
+      '-b:a',
+      '-crf',
+      '-ac',
+      '-threads',
+      '-filter_threads',
+    ]),
+    captureVf: true,
+    captureAf: true,
+  })
+
+  const vf = sourceVf ?? 'scale=min(1280\\,iw):-2:flags=fast_bilinear'
+
+  return [
+    ...passthrough,
+    '-c:v', 'libvpx',
+    '-deadline', 'realtime',
+    '-cpu-used', '8',
+    '-crf', '40',
+    '-b:v', '1M',
+    '-c:a', 'libvorbis',
+    '-b:a', '128k',
+    '-ac', '2',
+    ...(sourceAf ? ['-af', sourceAf] : []),
+    '-vf', vf,
+    '-y', fallbackOutputName,
+  ]
+}
+
+function buildFallbackPlan(
+  args: string[],
+  currentOutputName: string,
+  options: {
+    isGifExport: boolean
+    isWebmExport: boolean
+    canRetryFromMemoryFault: boolean
+  },
+): FallbackPlan {
+  if (options.isGifExport) {
+    const outputName = currentOutputName.replace(/\.[^.]+$/, '.gif')
+    return {
+      kind: 'gif',
+      outputName,
+      args: buildGifFallbackArgs(args, outputName),
+      detail: 'Primary GIF encode stalled. Retrying once with a fallback profile (fps 5, max width 320).',
+      message: 'Retrying once with GIF fallback profile (fps 5, max width 320)...',
+    }
+  }
+
+  if (options.isWebmExport) {
+    const outputName = currentOutputName.replace(/\.[^.]+$/, '.webm')
+    return {
+      kind: 'webm',
+      outputName,
+      args: buildWebmFallbackArgs(args, outputName),
+      detail: options.canRetryFromMemoryFault
+        ? 'Primary WebM encode hit WASM memory limits. Retrying once with a lower-memory WebM fallback profile (VP8/Vorbis, downscaled).'
+        : 'Primary WebM encode stalled. Retrying once with a faster WebM fallback profile (VP8/Vorbis).',
+      message: options.canRetryFromMemoryFault
+        ? 'Retrying once with lower-memory WebM fallback profile (vp8/vorbis, downscaled, realtime)...'
+        : 'Retrying once with WebM fallback profile (vp8/vorbis, realtime)...',
+    }
+  }
+
+  const outputName = currentOutputName.replace(/\.[^.]+$/, '.mp4')
+  return {
+    kind: 'safe',
+    outputName,
+    args: buildSafeFallbackArgs(args, outputName),
+    detail: 'Primary encode stalled. Retrying with fallback profile (mp4/libx264/aac).',
+    message: 'Retrying with fallback profile (mp4/libx264/aac)...',
+  }
 }
 
 async function restoreInputFileInFs(ffmpeg: Awaited<ReturnType<typeof getFFmpeg>>, inputName: string, objectUrl: string): Promise<void> {
@@ -158,9 +354,10 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
 
   const { format, fileHandle, fileName } = pickerResult
   const isGifExport = format === 'gif'
-  const stallWarnSeconds = isGifExport ? 120 : 30
-  const stallResetSeconds = isGifExport ? 75 : 45
-  const allowSafeFallbackRetry = true
+  const isWebmExport = format === 'webm'
+  const stallWarnSeconds = isGifExport ? EXPORT_RETRY_POLICY.stallWarnSeconds.gif : EXPORT_RETRY_POLICY.stallWarnSeconds.default
+  const stallResetSeconds = isGifExport ? EXPORT_RETRY_POLICY.stallResetSeconds.gif : EXPORT_RETRY_POLICY.stallResetSeconds.default
+  const allowSafeFallbackRetry = isGifExport
 
   store.setExporting(true)
 
@@ -171,7 +368,7 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
 
   log.addEntry({
     id: exportId,
-    label: 'exporting…',
+    label: 'exporting',
     status: 'running',
     progress: 0,
     children: [],
@@ -219,15 +416,24 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
 
     const { args, outputName, needsReencode } = buildCommand(format)
     let currentOutputName = outputName
-    appendJobOutput(prepareId, `ffmpeg ${args.join(' ')}`, 'stdout')
+
+    // Show full command for reference, but in a cleaner form with defaults omitted
+    const displayArgs = filterDefaultArgs([...args])
+    appendJobOutput(prepareId, `ffmpeg ${displayArgs.join(' ')}`, 'stdout')
+
+    // Warn about WebM encoding performance in wasm
+    if (outputName.endsWith('.webm')) {
+      appendJobOutput(prepareId, `⚠ WebM encoding is slower in wasm browser. Consider exporting to MP4 or running this command locally for faster results.`, 'stderr')
+    }
+
     log.updateEntry(prepareId, { status: 'done', progress: 100 })
 
     if (needsReencode) {
-      log.updateEntry(exportId, { label: 'exporting (re-encoding)…' })
-      log.updateEntry(encodeId, { label: 'encode media (re-encoding)…' })
+      log.updateEntry(exportId, { label: 'exporting (re-encoding)' })
+      log.updateEntry(encodeId, { label: 'encode media (re-encoding)' })
     } else {
-      log.updateEntry(exportId, { label: 'exporting (stream copy)…' })
-      log.updateEntry(encodeId, { label: 'encode media (stream copy)…' })
+      log.updateEntry(exportId, { label: 'exporting (stream copy)' })
+      log.updateEntry(encodeId, { label: 'encode media (stream copy)' })
     }
 
     activeStepId = encodeId
@@ -245,15 +451,15 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
       encodeStartedAt = Date.now()
       const heartbeat = window.setInterval(() => {
         const idleSec = Math.floor((Date.now() - lastActivityAt) / 1000)
-        if (idleSec < 10) return
-        if (idleSec - lastHeartbeatReported < 10) return
+        if (idleSec < 15) return
+        if (idleSec - lastHeartbeatReported < 15) return
         lastHeartbeatReported = idleSec
 
         if (isGifExport && selDuration > 0 && lastProgress < 95) {
           // gif progress from ffmpeg can be sparse in wasm. provide a conservative
           // fallback estimate based on elapsed wall time so users see movement.
           const elapsedSec = Math.max(1, Math.floor((Date.now() - encodeStartedAt) / 1000))
-          const estimatedTotalSec = Math.max(20, Math.ceil(selDuration * 12))
+          const estimatedTotalSec = Math.max(20, Math.ceil(selDuration * EXPORT_RETRY_POLICY.gifProgressEstimateFactor))
           const estimatedPct = Math.min(85, Math.max(1, Math.round((elapsedSec / estimatedTotalSec) * 100)))
           if (estimatedPct > lastProgress) {
             lastProgress = estimatedPct
@@ -262,20 +468,20 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
           }
         }
 
-        appendJobOutput(encodeId, `still running… waiting for new encoder output (${idleSec}s idle)`, 'info')
+        appendJobOutput(encodeId, `still running; waiting for new encoder output (${idleSec}s idle)`, 'info')
 
-        if (idleSec >= stallWarnSeconds && isGifExport) {
+        if (idleSec >= stallWarnSeconds) {
           appendJobOutput(
             encodeId,
-            `GIF encoding in browser can be slow; still processing (${idleSec}s idle, no new ffmpeg frame/progress events).`,
+            `${isGifExport ? 'GIF' : 'Encoding'} in browser can be slow; still processing (${idleSec}s idle, no new ffmpeg frame/progress events).`,
             'info',
           )
         }
 
-        if (idleSec >= stallResetSeconds && !stalled && allowSafeFallbackRetry) {
+        if (stallResetSeconds > 0 && idleSec >= stallResetSeconds && !stalled && allowSafeFallbackRetry) {
           stalled = true
           retrying = true
-          appendJobOutput(encodeId, 'encoder appears stalled; restarting encode worker…', 'info')
+          appendJobOutput(encodeId, 'encoder appears stalled; restarting encode worker', 'info')
           log.updateEntry(encodeId, {
             detail: `No encoder output for ${idleSec}s; forcing restart and retry.`,
           })
@@ -319,7 +525,7 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
       }
     }
 
-      const detachLog = bindFFmpegJobOutput(ffmpegInstance, encodeId, onLine)
+      const detachLog = bindFFmpegJobOutput(ffmpegInstance, encodeId, onLine, shouldDisplayEncodeLogLine)
       ffmpegInstance.on('progress', onProgress)
       try {
         await ffmpegInstance.exec(['-progress', 'pipe:1', ...execArgs])
@@ -333,41 +539,35 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
     try {
       await executeEncode(ffmpeg, args)
     } catch (err) {
-      if (!stalled || !needsReencode) throw err
+      const canRetryFromMemoryFault = isWebmExport && needsReencode && !retrying && isWasmMemoryFault(err)
+      if ((!stalled && !canRetryFromMemoryFault) || !needsReencode) throw err
 
-      const fallbackOutputName = isGifExport
-        ? currentOutputName.replace(/\.[^.]+$/, '.gif')
-        : currentOutputName.replace(/\.[^.]+$/, '.mp4')
-      const fallbackArgs = isGifExport
-        ? buildGifFallbackArgs(args, fallbackOutputName)
-        : buildSafeFallbackArgs(args, fallbackOutputName)
-      currentOutputName = fallbackOutputName
+      const fallbackPlan = buildFallbackPlan(args, currentOutputName, {
+        isGifExport,
+        isWebmExport,
+        canRetryFromMemoryFault,
+      })
+      currentOutputName = fallbackPlan.outputName
 
       log.updateEntry(encodeId, {
         status: 'running',
-        detail: isGifExport
-          ? 'Primary GIF encode stalled. Retrying once with a fallback profile (fps 5, max width 320).'
-          : 'Primary encode stalled. Retrying with fallback profile (mp4/libx264/aac).',
+        detail: fallbackPlan.detail,
       })
-      appendJobOutput(
-        encodeId,
-        isGifExport
-          ? 'Retrying once with GIF fallback profile (fps 5, max width 320)...'
-          : 'Retrying with fallback profile (mp4/libx264/aac)...',
-        'info',
-      )
+      appendJobOutput(encodeId, fallbackPlan.message, 'info')
 
       stalled = false
       retrying = false
       lastActivityAt = Date.now()
       lastHeartbeatReported = 0
-      lastProgress = Math.max(0, lastProgress)
+      lastProgress = 0
+      log.updateEntry(exportId, { progress: 0 })
+      log.updateEntry(encodeId, { progress: 0 })
 
       const retryFFmpeg = await getFFmpeg()
       activeFFmpeg = retryFFmpeg
       await restoreInputFileInFs(retryFFmpeg, store.file.name, store.file.objectUrl)
       appendJobOutput(encodeId, 'Restored source file after worker restart. Continuing retry...', 'info')
-      await executeEncode(retryFFmpeg, fallbackArgs)
+      await executeEncode(retryFFmpeg, fallbackPlan.args)
     }
 
     log.updateEntry(encodeId, { status: 'done', progress: 100 })
@@ -455,6 +655,12 @@ export async function pickExportTarget(
   return chooseExportTarget(sourceFileName, sourceHandle, sourceFormat, chosenFormat)
 }
 
+function resolveSaveStartIn(sourceHandle: NativeFileHandle | null): NativeFileHandle | 'downloads' {
+  // If we have a native source handle, start in that file's directory.
+  // Otherwise use downloads as the closest cross-browser fallback.
+  return sourceHandle ?? 'downloads'
+}
+
 async function chooseExportTarget(
   sourceFileName: string,
   sourceHandle: NativeFileHandle | null,
@@ -467,7 +673,7 @@ async function chooseExportTarget(
   if (supportsNativeSaveFilePicker()) {
     const selection = await showNativeSaveFilePicker({
       suggestedName,
-      startIn: sourceHandle,
+      startIn: resolveSaveStartIn(sourceHandle),
       types: [{
         description: `.${ext}`,
         accept: getPickerAccept(ext),

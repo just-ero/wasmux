@@ -3,6 +3,50 @@
 import type { FFmpeg } from '@ffmpeg/ffmpeg'
 import type { ProbeResult, TrackInfo } from '@/types/editor'
 import { execWithLog } from '@/lib/ffmpegLog'
+import { isErrorOutputLine } from '@/core/output/normalize'
+
+const probeSuppressedExactLines = new Set<string>([
+  'At least one output file must be specified',
+  'Aborted()',
+])
+
+const probeSuppressedPrefixes = [
+  'ffmpeg version',
+  '  built with',
+  '  configuration:',
+  '  libav',
+  '  libsw',
+  '  libpostproc',
+  '  Metadata:',
+  '    BPS',
+  '    DURATION',
+  '    NUMBER_OF_',
+  '    _STATISTICS_',
+]
+
+function isPrimaryStreamLine(line: string): boolean {
+  return /Stream\s+#\d+:(0|1)(?:\[[^\]]+\])?(?:\([^)]*\))?:\s+(Video|Audio):\s+/i.test(line)
+}
+
+export function shouldDisplayProbeLogLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  if (probeSuppressedExactLines.has(trimmed)) return false
+
+  const lower = trimmed.toLowerCase()
+  if (probeSuppressedPrefixes.some((prefix) => lower.startsWith(prefix.toLowerCase()))) {
+    return false
+  }
+
+  if (/^Input\s+#\d+,/i.test(trimmed)) return true
+  if (/^Duration:/i.test(trimmed)) return true
+  if (isPrimaryStreamLine(trimmed)) return true
+
+  // Keep any actionable warnings/errors not explicitly suppressed.
+  if (isErrorOutputLine(trimmed)) return true
+
+  return false
+}
 
 /** probe a wasm-fs file and return parsed metadata. */
 export async function probeFile(
@@ -14,7 +58,7 @@ export async function probeFile(
 
   if (logEntryId) {
     // pipe output to logstore and collect lines for parsing.
-    lines = await execWithLog(ffmpeg, ['-i', filename], logEntryId, true)
+    lines = await execWithLog(ffmpeg, ['-i', filename], logEntryId, true, shouldDisplayProbeLogLine)
   } else {
     // no log capture - just collect internally.
     lines = []

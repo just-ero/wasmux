@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
+import { useRuntimeConfigStore } from '@/stores/runtimeConfigStore'
 import type { CropRegion } from '@/types/editor'
 import { snapHorizontalPosition, snapVerticalPosition } from '@/lib/cropSnap'
+import { tryPlay } from '@/lib/domUtils'
+import { resolveMoveSnap } from '@/lib/cropMoveSnap'
 import { snap } from '@/lib/snap'
 import { DangerXButton } from '@/components/shared/DangerXButton'
 
@@ -18,9 +21,58 @@ interface Props {
   videoRef: React.RefObject<HTMLVideoElement | null>
 }
 
+function quantizeCropToGrid(
+  crop: CropRegion,
+  sourceW: number,
+  sourceH: number,
+  effectiveW: number,
+  effectiveH: number,
+): CropRegion {
+  const stepX = Math.max(1, sourceW / Math.max(1, effectiveW))
+  const stepY = Math.max(1, sourceH / Math.max(1, effectiveH))
+
+  const quantize = (value: number, step: number) => Math.round(value / step) * step
+
+  let width = Math.max(stepX, quantize(crop.width, stepX))
+  let height = Math.max(stepY, quantize(crop.height, stepY))
+
+  width = Math.min(sourceW, width)
+  height = Math.min(sourceH, height)
+
+  let x = quantize(crop.x, stepX)
+  let y = quantize(crop.y, stepY)
+
+  x = Math.max(0, Math.min(sourceW - width, x))
+  y = Math.max(0, Math.min(sourceH - height, y))
+
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  }
+}
+
+function quantizeVectorToEightDirections(dx: number, dy: number): { dx: number; dy: number } {
+  if (dx === 0 && dy === 0) return { dx: 0, dy: 0 }
+
+  const angle = Math.atan2(dy, dx)
+  const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4)
+  const ux = Math.cos(snappedAngle)
+  const uy = Math.sin(snappedAngle)
+  const projection = dx * ux + dy * uy
+
+  return {
+    dx: projection * ux,
+    dy: projection * uy,
+  }
+}
+
 export function CropOverlay({ videoRef }: Props) {
   const crop = useEditorStore((s) => s.crop)
   const probe = useEditorStore((s) => s.probe)
+  const outputWidth = useEditorStore((s) => s.videoProps.width)
+  const outputHeight = useEditorStore((s) => s.videoProps.height)
   const setCrop = useEditorStore((s) => s.setCrop)
   const previewUrl = useEditorStore((s) => s.previewUrl)
   const videoTrackIndex = useEditorStore((s) => s.videoProps.trackIndex)
@@ -31,6 +83,7 @@ export function CropOverlay({ videoRef }: Props) {
   const [dragMode, setDragMode] = useState<DragMode>(null)
   const [snapGuides, setSnapGuides] = useState({ x: false, y: false })
   const dragStart = useRef<{ x: number; y: number; crop: CropRegion } | null>(null)
+  const moveSnapLock = useRef<{ x: number; y: number } | null>(null)
   const createOrigin = useRef<{ sx: number; sy: number } | null>(null)
   const movedEnough = useRef(false)
   const dragPointerId = useRef<number | null>(null)
@@ -40,11 +93,41 @@ export function CropOverlay({ videoRef }: Props) {
 
   const sourceW = probe?.width ?? 1
   const sourceH = probe?.height ?? 1
+  const sourceAspect = sourceW / Math.max(1, sourceH)
+  const effectiveOutputW = outputWidth && outputWidth > 0
+    ? outputWidth
+    : outputHeight && outputHeight > 0
+      ? Math.max(1, Math.round(outputHeight * sourceAspect))
+      : sourceW
+  const effectiveOutputH = outputHeight && outputHeight > 0
+    ? outputHeight
+    : outputWidth && outputWidth > 0
+      ? Math.max(1, Math.round(outputWidth / sourceAspect))
+      : sourceH
   const hasRenderableVideo = Boolean(previewUrl && videoTrackIndex !== null)
+  const cropSnapConfig = useRuntimeConfigStore((s) => s.cropSnap)
   const centerX = sourceW / 2
   const centerY = sourceH / 2
-  const snapZoneX = Math.max(8, sourceW * 0.012)
-  const snapZoneY = Math.max(8, sourceH * 0.012)
+  const snapZoneX = Math.max(cropSnapConfig.minPixels, sourceW * cropSnapConfig.widthFactor)
+  const snapZoneY = Math.max(cropSnapConfig.minPixels, sourceH * cropSnapConfig.heightFactor)
+
+  const commitCropToGrid = useCallback((next: CropRegion) => {
+    setCrop(quantizeCropToGrid(next, sourceW, sourceH, effectiveOutputW, effectiveOutputH))
+  }, [setCrop, sourceW, sourceH, effectiveOutputW, effectiveOutputH])
+
+  useEffect(() => {
+    if (!crop) return
+    const quantized = quantizeCropToGrid(crop, sourceW, sourceH, effectiveOutputW, effectiveOutputH)
+    if (
+      quantized.x === crop.x &&
+      quantized.y === crop.y &&
+      quantized.width === crop.width &&
+      quantized.height === crop.height
+    ) {
+      return
+    }
+    setCrop(quantized)
+  }, [crop, sourceW, sourceH, effectiveOutputW, effectiveOutputH, setCrop])
 
   /** compute the video's actual rendered area relative to our overlay. */
   const updateContentRect = useCallback(() => {
@@ -206,6 +289,7 @@ export function CropOverlay({ videoRef }: Props) {
     dragPointerId.current = e.pointerId
     setDragMode(mode)
     setSnapGuides((prev) => (prev.x || prev.y ? { x: false, y: false } : prev))
+    moveSnapLock.current = null
     dragStart.current = { x: e.clientX, y: e.clientY, crop: { ...crop } }
   }, [crop])
 
@@ -265,7 +349,7 @@ export function CropOverlay({ videoRef }: Props) {
       const y = Math.round(Math.min(origin.sy, snappedCurrentY))
       const w = Math.round(Math.max(1, Math.abs(snappedCurrentX - origin.sx)))
       const h = Math.round(Math.max(1, Math.abs(snappedCurrentY - origin.sy)))
-      setCrop({ x, y, width: w, height: h })
+      commitCropToGrid({ x, y, width: w, height: h })
       return
     }
 
@@ -289,15 +373,28 @@ export function CropOverlay({ videoRef }: Props) {
     const hasS = dragMode.includes('s')
 
     if (dragMode === 'move') {
-      x = Math.max(0, Math.min(sourceW - width, orig.x + dx))
-      y = Math.max(0, Math.min(sourceH - height, orig.y + dy))
+      const quantizedDelta = quantizeVectorToEightDirections(dx, dy)
+      const resolved = resolveMoveSnap({
+        orig,
+        sourceW,
+        sourceH,
+        centerX,
+        centerY,
+        snapZoneX,
+        snapZoneY,
+        dx,
+        dy,
+        constrainAspect,
+        quantizedDx: quantizedDelta.dx,
+        quantizedDy: quantizedDelta.dy,
+        prevLock: moveSnapLock.current,
+      })
 
-      const xSnap = snapHorizontalPosition(x, width, centerX, snapZoneX, ['left', 'center', 'right'])
-      const ySnap = snapVerticalPosition(y, height, centerY, snapZoneY, ['top', 'center', 'bottom'])
-      x = Math.max(0, Math.min(sourceW - width, xSnap.x))
-      y = Math.max(0, Math.min(sourceH - height, ySnap.y))
-      snappedXGuide = xSnap.snapped
-      snappedYGuide = ySnap.snapped
+      moveSnapLock.current = resolved.nextLock
+      x = resolved.x
+      y = resolved.y
+      snappedXGuide = resolved.snappedXGuide
+      snappedYGuide = resolved.snappedYGuide
     } else {
       // allow handles/corners to cross over the opposite side and flip naturally.
       let left = origLeft
@@ -552,8 +649,8 @@ export function CropOverlay({ videoRef }: Props) {
     const nextGuides = { x: snappedXGuide, y: snappedYGuide }
     setSnapGuides((prev) => (prev.x === nextGuides.x && prev.y === nextGuides.y ? prev : nextGuides))
 
-    setCrop({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
-  }, [dragMode, crop, setCrop, sourceW, sourceH, contentRect, centerX, centerY, snapZoneX, snapZoneY, toSource])
+    commitCropToGrid({ x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) })
+  }, [dragMode, crop, sourceW, sourceH, contentRect, centerX, centerY, snapZoneX, snapZoneY, toSource, commitCropToGrid])
 
   const finishDrag = useCallback((allowClickToggle: boolean, pointerId?: number) => {
     if (dragPointerId.current !== null && pointerId !== undefined && pointerId !== dragPointerId.current) {
@@ -563,7 +660,7 @@ export function CropOverlay({ videoRef }: Props) {
     if (allowClickToggle && dragMode === 'create' && !movedEnough.current) {
       const video = videoRef.current
       if (video) {
-        if (video.paused) video.play()
+        if (video.paused) tryPlay(video)
         else video.pause()
       }
     }
@@ -578,6 +675,7 @@ export function CropOverlay({ videoRef }: Props) {
     }
     setDragMode(null)
     setSnapGuides((prev) => (prev.x || prev.y ? { x: false, y: false } : prev))
+    moveSnapLock.current = null
     dragStart.current = null
     createOrigin.current = null
     movedEnough.current = false
@@ -637,21 +735,21 @@ export function CropOverlay({ videoRef }: Props) {
     e.preventDefault()
 
     if (e.shiftKey) {
-      setCrop({
+      commitCropToGrid({
         x: crop.x,
         y: crop.y,
         width: Math.max(16, crop.width + dx),
         height: Math.max(16, crop.height + dy),
       })
     } else {
-      setCrop({
+      commitCropToGrid({
         x: crop.x + dx,
         y: crop.y + dy,
         width: crop.width,
         height: crop.height,
       })
     }
-  }, [crop, setCrop])
+  }, [crop, commitCropToGrid])
 
   const left = crop ? (crop.x / sourceW) * 100 : 0
   const top = crop ? (crop.y / sourceH) * 100 : 0

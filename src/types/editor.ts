@@ -113,11 +113,8 @@ export interface VideoProps {
   tune: VideoTune
   width: number | null     // null = keep source resolution
   height: number | null
-  fps: number | null       // null = keep source fps
+  fps: number | null       // output fps override (timeline/source frame count still uses probe.fps)
   speed: number            // playback speed multiplier, 0.25 - 4
-  gifFps: number | null    // null = use gif default
-  gifWidth: number | null  // null = auto
-  gifHeight: number | null // null = auto
   trackIndex: number | null // which video stream to use (null = no video / audio-only export)
   subtitleTrackIndex: number | null // burn-in subs (null = none)
   keepAspectRatio: boolean
@@ -183,7 +180,7 @@ export const SUPPORTED_AUDIO_EXTENSIONS = AUDIO_FORMATS.map((format) => `.${form
 export const SUPPORTED_EXTENSIONS = [...SUPPORTED_VIDEO_EXTENSIONS, ...SUPPORTED_AUDIO_EXTENSIONS]
 
 /** hard max for wasm + ffmpeg memory constraints. */
-export const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 gb
+export const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 GiB
 
 /** recommended limit for smooth operation on most machines. */
 export const RECOMMENDED_FILE_SIZE = 500 * 1024 * 1024 // 500 mb

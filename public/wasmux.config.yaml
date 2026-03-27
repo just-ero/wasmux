@@ -1,0 +1,11 @@
+# Runtime tuning for wasmux UI behavior.
+# Edit values and reload the app.
+
+crop:
+  snap:
+    # Minimum snap zone in source pixels.
+    minPixels: 4
+    # Horizontal snap sensitivity relative to source width.
+    widthFactor: 0.006
+    # Vertical snap sensitivity relative to source height.
+    heightFactor: 0.006

@@ -31,6 +31,7 @@ describe('pickExportTarget', () => {
 
     const options = pickerMocks.showNativeSaveFilePicker.mock.calls[0][0]
     expect(options.suggestedName).toBe('clip-wasmux.mkv')
+    expect(options.startIn).toBe('downloads')
     expect(options.types).toEqual([
       {
         description: '.mkv',
@@ -50,12 +51,26 @@ describe('pickExportTarget', () => {
     expect(target?.format).toBe('mp4')
     const options = pickerMocks.showNativeSaveFilePicker.mock.calls[0][0]
     expect(options.suggestedName).toBe('clip-wasmux.mp4')
+    expect(options.startIn).toBe('downloads')
     expect(options.types).toEqual([
       {
         description: '.mp4',
         accept: { 'application/octet-stream': ['.mp4'] },
       },
     ])
+  })
+
+  it('uses the source native handle for startIn when available', async () => {
+    pickerMocks.supportsNativeSaveFilePicker.mockReturnValue(true)
+    pickerMocks.showNativeSaveFilePicker.mockResolvedValue({
+      handle: { name: 'clip-wasmux.webm' },
+    })
+
+    const sourceHandle = { name: 'clip.mp4' }
+    await pickExportTarget('clip.mp4', sourceHandle, 'mov,mp4,m4a,3gp,3g2,mj2', 'webm')
+
+    const options = pickerMocks.showNativeSaveFilePicker.mock.calls[0][0]
+    expect(options.startIn).toBe(sourceHandle)
   })
 
   it('falls back to non-native target with the chosen format', async () => {

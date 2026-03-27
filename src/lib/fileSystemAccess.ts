@@ -14,7 +14,7 @@ interface NativeOpenFilePickerOptions {
 interface NativeSaveFilePickerOptions {
   excludeAcceptAllOption?: boolean
   suggestedName?: string
-  startIn?: NativeFileHandle | null
+  startIn?: NativeFileHandle | 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos' | null
   types?: PickerTypeDescriptor[]
 }
 

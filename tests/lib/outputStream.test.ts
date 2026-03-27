@@ -27,6 +27,10 @@ describe('isErrorOutputLine', () => {
     expect(isErrorOutputLine('Process aborted')).toBe(true)
   })
 
+  it('treats bare wasm shutdown marker as non-error', () => {
+    expect(isErrorOutputLine('Aborted()')).toBe(false)
+  })
+
   it('does not mark informational lines as errors', () => {
     expect(isErrorOutputLine('Input #0, matroska,webm, from file.mkv')).toBe(false)
     expect(isErrorOutputLine('Stream mapping:')).toBe(false)

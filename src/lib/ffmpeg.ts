@@ -3,51 +3,17 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import coreJsUrl from '@ffmpeg/core?url'
 import coreWasmUrl from '@ffmpeg/core/wasm?url'
-import coreMtJsUrl from '@ffmpeg/core-mt?url'
-import coreMtWasmUrl from '@ffmpeg/core-mt/wasm?url'
-
-function isStandaloneAppMode(): boolean {
-  if (typeof window === 'undefined') return false
-
-  const inStandaloneDisplayMode =
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(display-mode: standalone)').matches
-
-  const iosStandalone =
-    typeof navigator !== 'undefined' &&
-    'standalone' in navigator &&
-    Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
-
-  const twaReferrer =
-    typeof document !== 'undefined' &&
-    typeof document.referrer === 'string' &&
-    document.referrer.startsWith('android-app://')
-
-  return inStandaloneDisplayMode || iosStandalone || twaReferrer
-}
-
-function shouldUseMultiThreadCore(): boolean {
-  // @ffmpeg/core-mt worker bootstrapping is currently unstable in vite dev.
-  // keep dev on single-thread for reliability; production can still use mt.
-  if (import.meta.env.DEV) return false
-
-  if (typeof SharedArrayBuffer === 'undefined') return false
-
-  // in installed app windows some chromium builds can become unstable with
-  // the mt core + workers. prefer single-thread there for startup stability.
-  if (isStandaloneAppMode()) return false
-
-  return true
-}
 
 /** loaded ffmpeg instance, if available. */
 let instance: FFmpeg | null = null
+
+const FFmpeg_LOAD_TIMEOUT_ST_MS = 25000
 
 /** shared in-flight load promise. */
 let loadPromise: Promise<FFmpeg> | null = null
 
 /** cached core asset urls reused across resets. */
-let cachedURLs: { coreURL: string; wasmURL: string; workerURL?: string } | null = null
+let cachedURLs: { coreURL: string; wasmURL: string } | null = null
 
 function stripQuery(url: string): string {
   return url.replace(/\?.*$/, '')
@@ -60,12 +26,23 @@ function buildSingleThreadURLs(): { coreURL: string; wasmURL: string } {
   }
 }
 
-function buildMultiThreadURLs(): { coreURL: string; wasmURL: string; workerURL: string } {
-  const coreURL = stripQuery(coreMtJsUrl)
-  return {
-    coreURL,
-    wasmURL: stripQuery(coreMtWasmUrl),
-    workerURL: coreURL.replace('ffmpeg-core.js', 'ffmpeg-core.worker.js'),
+async function loadWithTimeout(
+  ffmpeg: FFmpeg,
+  urls: { coreURL: string; wasmURL: string },
+  timeoutMs: number,
+): Promise<void> {
+  let timeoutId: number | null = null
+  try {
+    await Promise.race([
+      ffmpeg.load(urls),
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(`FFmpeg core load timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId)
   }
 }
 
@@ -82,28 +59,15 @@ export function getFFmpeg(cbs?: LoadCallbacks): Promise<FFmpeg> {
   loadPromise = (async () => {
     let ffmpeg = new FFmpeg()
     instance = ffmpeg
+    const singleThreadURLs = buildSingleThreadURLs()
+    const preferred = singleThreadURLs
+    const preferredTimeout = FFmpeg_LOAD_TIMEOUT_ST_MS
 
     if (cachedURLs) {
-      await ffmpeg.load(cachedURLs)
-      return ffmpeg
-    }
-
-    const singleThreadURLs = buildSingleThreadURLs()
-    const multiThreadURLs = buildMultiThreadURLs()
-    const prefersMultiThread = shouldUseMultiThreadCore()
-
-    cbs?.onDownloading?.()
-    cbs?.onInitializing?.()
-
-    const preferred = prefersMultiThread ? multiThreadURLs : singleThreadURLs
-
-    try {
-      await ffmpeg.load(preferred)
-      cachedURLs = preferred
-      return ffmpeg
-    } catch (err) {
-      // if mt worker bootstrap fails, automatically retry single-threaded core.
-      if (prefersMultiThread) {
+      try {
+        await loadWithTimeout(ffmpeg, cachedURLs, preferredTimeout)
+        return ffmpeg
+      } catch {
         try {
           ffmpeg.terminate()
         } catch {
@@ -112,11 +76,20 @@ export function getFFmpeg(cbs?: LoadCallbacks): Promise<FFmpeg> {
 
         ffmpeg = new FFmpeg()
         instance = ffmpeg
-        await ffmpeg.load(singleThreadURLs)
+        await loadWithTimeout(ffmpeg, singleThreadURLs, FFmpeg_LOAD_TIMEOUT_ST_MS)
         cachedURLs = singleThreadURLs
         return ffmpeg
       }
+    }
 
+    cbs?.onDownloading?.()
+    cbs?.onInitializing?.()
+
+    try {
+      await loadWithTimeout(ffmpeg, preferred, preferredTimeout)
+      cachedURLs = preferred
+      return ffmpeg
+    } catch (err) {
       throw err
     }
   })()

@@ -2,12 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { validateFile } from '@/lib/fileValidation'
+import type { NativeFileHandle } from '@/types/editor'
 
 interface UseGlobalDropOptions {
   /** called with the validated file when a drop or paste succeeds. */
-  onFile: (file: File) => void
+  onFile: (file: File, sourceHandle?: NativeFileHandle | null) => void
   /** called with an error string if validation fails. */
   onError: (message: string) => void
+}
+
+interface DataTransferItemWithFsHandle extends DataTransferItem {
+  getAsFileSystemHandle?: () => Promise<{ kind?: string } | null>
 }
 
 export function useGlobalDrop({ onFile, onError }: UseGlobalDropOptions) {
@@ -22,12 +27,12 @@ export function useGlobalDrop({ onFile, onError }: UseGlobalDropOptions) {
 
   /** validate then forward a file, or report an error. */
   const handleFile = useCallback(
-    (file: File) => {
+    (file: File, sourceHandle?: NativeFileHandle | null) => {
       const err = validateFile(file)
       if (err) {
         onError(err)
       } else {
-        onFile(file)
+        onFile(file, sourceHandle ?? null)
       }
     },
     [onFile, onError],
@@ -63,8 +68,26 @@ export function useGlobalDrop({ onFile, onError }: UseGlobalDropOptions) {
       e.preventDefault()
       dragCount.current = 0
       setIsDragging(false)
-      const file = e.dataTransfer?.files[0]
-      if (file) handleFile(file)
+
+      void (async () => {
+        const file = e.dataTransfer?.files[0]
+        if (!file) return
+
+        let sourceHandle: NativeFileHandle | null = null
+        const item = e.dataTransfer?.items?.[0] as DataTransferItemWithFsHandle | undefined
+        if (item?.getAsFileSystemHandle) {
+          try {
+            const fsHandle = await item.getAsFileSystemHandle()
+            if (fsHandle && fsHandle.kind === 'file') {
+              sourceHandle = fsHandle as unknown as NativeFileHandle
+            }
+          } catch {
+            // best-effort only; fallback still works without a native handle.
+          }
+        }
+
+        handleFile(file, sourceHandle)
+      })()
     }
 
     // paste tracking

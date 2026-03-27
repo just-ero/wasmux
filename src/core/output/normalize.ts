@@ -14,5 +14,6 @@ export function normalizeOutputChannel(rawType: string | undefined): OutputChann
  * this is intentionally command-agnostic so any runner can reuse it.
  */
 export function isErrorOutputLine(message: string): boolean {
+  if (message.trim() === 'Aborted()') return false
   return /(\berror\b|\bfatal\b|\bfailed\b|\binvalid\b|\bdenied\b|\bunable\b|\baborted\b|\bpanic\b)/i.test(message)
 }

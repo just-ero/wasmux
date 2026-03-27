@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseProbeOutput } from '@/lib/probe'
+import { parseProbeOutput, shouldDisplayProbeLogLine } from '@/lib/probe'
 
 /* helpers */
 /** realistic ffmpeg -i output for an mp4 file. */
@@ -186,5 +186,29 @@ describe('parseProbeOutput', () => {
     expect(result.audioTracks).toHaveLength(1)
     expect(result.videoCodec).toBe('h264')
     expect(result.audioCodec).toBe('aac')
+  })
+})
+
+describe('shouldDisplayProbeLogLine', () => {
+  it('suppresses ffmpeg banner noise', () => {
+    expect(shouldDisplayProbeLogLine('ffmpeg version 5.1.4 Copyright (c)')).toBe(false)
+    expect(shouldDisplayProbeLogLine('  configuration: --target-os=none')).toBe(false)
+    expect(shouldDisplayProbeLogLine('  libavcodec     59. 37.100 / 59. 37.100')).toBe(false)
+  })
+
+  it('suppresses benign probe-only abort lines', () => {
+    expect(shouldDisplayProbeLogLine('At least one output file must be specified')).toBe(false)
+    expect(shouldDisplayProbeLogLine('Aborted()')).toBe(false)
+  })
+
+  it('keeps key input metadata and primary stream lines', () => {
+    expect(shouldDisplayProbeLogLine('Input #0, matroska,webm, from \'movie.mkv\':')).toBe(true)
+    expect(shouldDisplayProbeLogLine('  Duration: 01:24:40.35, start: 0.000000, bitrate: 3147 kb/s')).toBe(true)
+    expect(shouldDisplayProbeLogLine('  Stream #0:0: Video: hevc (Main 10), yuv420p10le, 1920x824')).toBe(true)
+    expect(shouldDisplayProbeLogLine('  Stream #0:1(eng): Audio: eac3, 48000 Hz, 5.1(side), fltp, 640 kb/s')).toBe(true)
+  })
+
+  it('keeps actionable error lines', () => {
+    expect(shouldDisplayProbeLogLine('Error opening input file')).toBe(true)
   })
 })

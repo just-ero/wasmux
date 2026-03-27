@@ -1,12 +1,11 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
 import { exportFile, pickExportTarget } from '@/lib/exportFile'
-import { formatTime } from '@/lib/frameUtils'
+import { clampFrame, formatTime, remapFrameIndex, totalFramesFromDuration } from '@/lib/frameUtils'
 import { resolveOutputExtension } from '@/lib/outputFormats'
 import * as Icons from '@/components/shared/Icons'
 import { AUDIO_FORMATS, VIDEO_FORMATS } from '@/types/editor'
 import type { OutputFormat } from '@/types/editor'
-import { GifExportDialog } from '@/components/editor/GifExportDialog'
 import type { FormatMenuItem } from '@/components/editor/FormatMenu'
 import { FormatMenu } from '@/components/editor/FormatMenu'
 
@@ -15,35 +14,44 @@ export const ExportControls = memo(function ExportControls() {
   const probe = useEditorStore((s) => s.probe)
   const selections = useEditorStore((s) => s.selections)
   const showFrames = useEditorStore((s) => s.showFrames)
-  const crop = useEditorStore((s) => s.crop)
-  const videoProps = useEditorStore((s) => s.videoProps)
-  const setVideoProps = useEditorStore((s) => s.setVideoProps)
+  const outputFpsOverride = useEditorStore((s) => s.videoProps.fps)
   const isExporting = useEditorStore((s) => s.isExporting)
 
-  const [pendingGifFormat, setPendingGifFormat] = useState<OutputFormat | null>(null)
   const [formatMenuOpen, setFormatMenuOpen] = useState(false)
 
   const exportBtnRef = useRef<HTMLButtonElement>(null)
   const formatMenuId = 'export-format-menu'
 
-  const fps = probe?.fps ?? 0
+  const sourceFps = probe?.fps ?? 0
+  const displayFps = outputFpsOverride && outputFpsOverride > 0 ? outputFpsOverride : sourceFps
   const duration = probe?.duration ?? 0
   const sel = selections[0]
+  const totalFrames = useEditorStore((s) => s.totalFrames)
   const selFrames = sel ? Math.max(0, sel.end - sel.start + 1) : 0
-  const selSeconds = fps > 0 ? selFrames / fps : 0
-  const selectionText = showFrames ? `${selFrames}` : formatTime(selSeconds, duration)
-
-  const gifMaxWidth = crop?.width ?? probe?.width ?? 1
-  const gifMaxHeight = crop?.height ?? probe?.height ?? 1
-  const gifAspectRatio = gifMaxWidth > 0 && gifMaxHeight > 0 ? gifMaxWidth / gifMaxHeight : 1
+  const selSeconds = sourceFps > 0 ? selFrames / sourceFps : 0
+  const selStart = sel?.start ?? 0
+  const selEnd = sel?.end ?? Math.max(0, totalFrames - 1)
+  const displayTotalFrames = displayFps > 0 && duration > 0
+    ? totalFramesFromDuration(duration, displayFps)
+    : totalFrames
+  const selStartDisplay = remapFrameIndex(selStart, sourceFps, displayFps, displayTotalFrames)
+  const selEndDisplay = remapFrameIndex(selEnd, sourceFps, displayFps, displayTotalFrames)
+  const selFramesDisplay = Math.max(0, clampFrame(selEndDisplay, displayTotalFrames) - clampFrame(selStartDisplay, displayTotalFrames) + 1)
+  const selectionText = showFrames
+    ? `${selFramesDisplay}`
+    : formatTime(selSeconds, duration)
 
   const formatOptions = useMemo<FormatMenuItem[]>(() => {
+    const formatLabel = (format: string): string => {
+      return `.${format}`
+    }
+
     const sourceExt = file ? resolveOutputExtension('source', probe?.format, file.name) : 'mp4'
     const otherVideoFormats = VIDEO_FORMATS.filter((format) => format !== sourceExt)
     const otherAudioFormats = AUDIO_FORMATS.filter((format) => format !== sourceExt)
 
     const items: FormatMenuItem[] = [
-      { kind: 'option', format: 'source', label: `.${sourceExt} (source)` },
+      { kind: 'option', format: 'source', label: `${formatLabel(sourceExt)} (source)` },
     ]
 
     if (otherVideoFormats.length > 0) {
@@ -52,7 +60,7 @@ export const ExportControls = memo(function ExportControls() {
         ...otherVideoFormats.map((format) => ({
           kind: 'option' as const,
           format,
-          label: `.${format}`,
+          label: formatLabel(format),
         })),
       )
     }
@@ -63,7 +71,7 @@ export const ExportControls = memo(function ExportControls() {
         ...otherAudioFormats.map((format) => ({
           kind: 'option' as const,
           format,
-          label: `.${format}`,
+          label: formatLabel(format),
         })),
       )
     }
@@ -79,10 +87,6 @@ export const ExportControls = memo(function ExportControls() {
 
   const onFormatSelect = useCallback(async (format: OutputFormat) => {
     setFormatMenuOpen(false)
-    if (format === 'gif') {
-      setPendingGifFormat(format)
-      return
-    }
 
     const state = useEditorStore.getState()
     if (!state.file || !state.probe) return
@@ -97,40 +101,6 @@ export const ExportControls = memo(function ExportControls() {
 
     await exportFile({ target })
   }, [])
-
-  const onConfirmGifOptions = useCallback(async (options: {
-    gifFps: number
-    gifWidth: number | null
-    gifHeight: number | null
-    keepAspectRatio: boolean
-  }) => {
-    if (!pendingGifFormat) return
-
-    setVideoProps({
-      gifFps: options.gifFps,
-      gifWidth: options.gifWidth,
-      gifHeight: options.gifHeight,
-      keepAspectRatio: options.keepAspectRatio,
-    })
-
-    setPendingGifFormat(null)
-
-    // let the modal close before opening the native save dialog.
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
-
-    const state = useEditorStore.getState()
-    if (!state.file || !state.probe) return
-
-    const target = await pickExportTarget(
-      state.file.name,
-      state.file.sourceHandle ?? null,
-      state.probe.format,
-      pendingGifFormat,
-    )
-    if (!target) return
-
-    await exportFile({ target })
-  }, [pendingGifFormat, setVideoProps])
 
   if (!file) return null
 
@@ -162,20 +132,6 @@ export const ExportControls = memo(function ExportControls() {
           onClose={() => setFormatMenuOpen(false)}
         />
       )}
-
-      <GifExportDialog
-        isOpen={pendingGifFormat !== null}
-        sourceFps={probe?.fps ?? 0}
-        maxWidth={gifMaxWidth}
-        maxHeight={gifMaxHeight}
-        aspectRatio={gifAspectRatio}
-        initialFps={videoProps.gifFps}
-        initialWidth={videoProps.gifWidth}
-        initialHeight={videoProps.gifHeight}
-        initialKeepAspectRatio={videoProps.keepAspectRatio}
-        onCancel={() => setPendingGifFormat(null)}
-        onConfirm={(options) => { void onConfirmGifOptions(options) }}
-      />
     </>
   )
 })

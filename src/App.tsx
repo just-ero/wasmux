@@ -17,8 +17,15 @@ import { EditorView } from '@/components/editor/EditorView'
 import { BrowseInput } from '@/components/landing/DropZone'
 import type { BrowseInputHandle } from '@/components/landing/DropZone'
 import type { NativeFileHandle } from '@/types/editor'
+import { startMemoryTelemetry } from '@/stores/memoryTelemetryStore'
+import { useRuntimeConfigStore } from '@/stores/runtimeConfigStore'
 
 export function App() {
+  useEffect(() => {
+    startMemoryTelemetry()
+    void useRuntimeConfigStore.getState().loadRuntimeConfig()
+  }, [])
+
   const { theme, toggle } = useTheme()
   const file = useEditorStore((s) => s.file)
   const ingestionStatus = useEditorStore((s) => s.ingestionStatus)
@@ -77,8 +84,33 @@ export function App() {
     const ffStatus = useFFmpegStore.getState().status
     if (ffStatus !== 'ready') {
       pendingFileRef.current = { file: f, sourceHandle: sourceHandle ?? null }
+      const prev = useEditorStore.getState().file
+      if (prev) URL.revokeObjectURL(prev.objectUrl)
+
+      const objectUrl = URL.createObjectURL(f)
+      loadFile(
+        { name: f.name, size: f.size, type: f.type, objectUrl, sourceHandle: sourceHandle ?? null },
+        {
+          duration: 0,
+          width: 0,
+          height: 0,
+          fps: 0,
+          videoCodec: '',
+          audioCodec: '',
+          containerBitrate: 0,
+          videoBitrate: 0,
+          audioBitrate: 0,
+          audioSampleRate: 0,
+          audioChannels: 0,
+          videoTracks: [],
+          audioTracks: [],
+          subtitleTracks: [],
+          format: '',
+        },
+      )
+      useEditorStore.getState().setIngestionStatus('preview')
       if (ffStatus === 'idle') void startFFmpegLoad()
-      setError('FFmpeg is still loading. file queued and will ingest automatically when ready.')
+      setError(null)
       return
     }
 
@@ -129,25 +161,10 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [toggle])
 
-  /** click handler for landing page. */
-  const onPageClick = useCallback(() => {
-    const selected = window.getSelection()?.toString() ?? ''
-    if (selected.trim()) return
+  const onBrowseClick = useCallback(() => {
     if (useFFmpegStore.getState().status === 'idle') void startFFmpegLoad()
     browseRef.current?.browse()
   }, [])
-
-  /** keyboard handler for landing page. */
-  const onPageKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault()
-        if (useFFmpegStore.getState().status === 'idle') void startFFmpegLoad()
-        browseRef.current?.browse()
-      }
-    },
-    [],
-  )
 
   /** close editor and return to landing page. */
   const handleClose = useCallback(() => {
@@ -192,19 +209,15 @@ export function App() {
       {/* bottom operation log panel */}
       <LogPanel />
 
-      {/* entire landing area opens file picker. */}
+      {/* normal landing page; only explicit browse action opens picker. */}
       <main
         id="landing-main"
-        role="button"
-        tabIndex={0}
-        aria-label="Click to choose a file, or drop or paste anywhere"
-        onClick={onPageClick}
-        onKeyDown={onPageKeyDown}
-        className="min-h-dvh flex items-center justify-center"
+        className="min-h-dvh flex flex-col"
       >
         <LandingPage
           theme={theme}
           onToggleTheme={toggle}
+          onBrowse={onBrowseClick}
           error={error}
         />
       </main>
