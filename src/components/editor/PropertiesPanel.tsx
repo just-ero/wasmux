@@ -477,6 +477,32 @@ function PropertiesPanelImpl() {
               <SettingResetButton label="Reset trim" onClick={resetTrim} />
             )}
           </PropertyRow>
+          {isTrimmed && (
+            <PropertyRow label="cutting" labelWidth={labelWidth}>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 cursor-pointer text-[12px]">
+                  <input
+                    type="checkbox"
+                    checked={videoProps.preciseFrameCuts}
+                    onChange={(e) => setVideoProps({ preciseFrameCuts: e.target.checked })}
+                    aria-label="Precise frame cuts"
+                    title="Cut at exact frames instead of keyframes (may require re-encoding)"
+                  />
+                  <span>exact frames (re-encode if needed)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer text-[12px]">
+                  <input
+                    type="checkbox"
+                    checked={videoProps.fastExport}
+                    onChange={(e) => setVideoProps({ fastExport: e.target.checked })}
+                    aria-label="Fast export"
+                    title="Trade frame precision for speed: uses keyframe snapping + ultrafast encoding"
+                  />
+                  <span>fast export (speed over precision)</span>
+                </label>
+              </div>
+            </PropertyRow>
+          )}
 
           <GroupTitle title="output sizing + timing" />
           <PropertyRow label="fps" labelWidth={labelWidth}>

@@ -9,8 +9,8 @@ import type { ProbeResult, VideoProps, AudioProps } from '@/types/editor'
 
 const defaultVideoProps: VideoProps = {
   codec: 'copy',
-  preset: 'medium',
-  crf: 23,
+  preset: 'fast',
+  crf: 25,
   profile: 'high',
   tune: '',
   width: null,
@@ -20,6 +20,8 @@ const defaultVideoProps: VideoProps = {
   trackIndex: 0,
   subtitleTrackIndex: null,
   keepAspectRatio: true,
+  preciseFrameCuts: false,
+  fastExport: false,
 }
 
 const defaultAudioProps: AudioProps = {

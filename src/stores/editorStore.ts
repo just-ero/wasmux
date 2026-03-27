@@ -23,8 +23,8 @@ function areCropsEqual(a: CropRegion | null, b: CropRegion | null): boolean {
 /* sensible defaults for a freshly-loaded file */
 const defaultVideoProps: VideoProps = {
   codec: 'copy',        // stream-copy by default (fastest, lossless)
-  preset: 'medium',
-  crf: 23,
+  preset: 'fast',       // fast preset: ~2x faster than medium with minimal quality loss
+  crf: 25,              // slightly higher CRF = faster encoding, imperceptible quality loss
   profile: 'high',
   tune: '',
   width: null,          // null = keep source
@@ -34,6 +34,8 @@ const defaultVideoProps: VideoProps = {
   trackIndex: 0,        // first video track
   subtitleTrackIndex: null,
   keepAspectRatio: true,
+  preciseFrameCuts: false, // stream-copy trims by default (fast); enable if you need exact frame boundaries
+  fastExport: false,    // when true: use keyframe snapping + ultrafast preset
 }
 
 const defaultAudioProps: AudioProps = {

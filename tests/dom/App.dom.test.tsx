@@ -46,8 +46,8 @@ vi.mock('../../src/components/editor/EditorView', () => ({
 
 const defaultVideoProps = {
   codec: 'copy' as const,
-  preset: 'medium' as const,
-  crf: 23,
+  preset: 'fast' as const,
+  crf: 25,
   profile: 'high' as const,
   tune: '' as const,
   width: null,
@@ -57,6 +57,8 @@ const defaultVideoProps = {
   trackIndex: 0,
   subtitleTrackIndex: null,
   keepAspectRatio: true,
+  preciseFrameCuts: false,
+  fastExport: false,
 }
 
 const defaultAudioProps = {
@@ -80,7 +82,7 @@ function resetEditorStore() {
     selections: [],
     crop: null,
     cropMode: false,
-    videoProps: { ...defaultVideoProps },
+    videoProps: { ...defaultVideoProps, fastExport: false },
     audioProps: { ...defaultAudioProps },
     outputFormat: 'source',
     activeTab: 'video',

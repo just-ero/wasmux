@@ -201,8 +201,12 @@ export function buildCommand(format: OutputFormat): BuildResult {
 
   // with -ss before -i, ffmpeg seeks to the nearest preceding
   // keyframe for stream-copy, so no keyframe analysis needed.
+  // if preciseFrameCuts is enabled, force re-encode for exact frame cutting.
+  // fastExport overrides preciseFrameCuts to enable keyframe snapping for speed.
+  const effectivePreciseFrameCuts = videoProps.preciseFrameCuts && !videoProps.fastExport
+  const forcedPreciseTrimReencode = effectivePreciseFrameCuts && isTrimmed && videoProps.codec === 'copy'
   const needsAudioReencode = hasAudioTrack && !aCodecCopy
-  const needsReencode = !vCodecCopy || hasCrop || hasFpsChange || hasScaleChange || needsAudioReencode
+  const needsReencode = !vCodecCopy || hasCrop || hasFpsChange || hasScaleChange || needsAudioReencode || forcedPreciseTrimReencode
   const useFastSeek = isGifOutput || !needsReencode
   const trimStart = isTrimmed && fps > 0 ? frameToTime(inFrame, fps) : null
   const useCoarsePreseekForReencode =
@@ -336,11 +340,13 @@ export function buildCommand(format: OutputFormat): BuildResult {
     const codec = resolvedVideoCodec
     if (codec === 'libx264') {
       args.push('-c:v', codec)
-      args.push('-preset', forcedCropReencode ? 'ultrafast' : videoProps.preset)
+      const effectivePreset = videoProps.fastExport ? 'ultrafast' : (forcedCropReencode ? 'ultrafast' : videoProps.preset)
+      args.push('-preset', effectivePreset)
       args.push('-crf', String(videoProps.crf))
       args.push('-pix_fmt', 'yuv420p')
-      // single-thread x264 is more stable in wasm/pthreads edge cases.
-      args.push('-threads', '1')
+      // multithreaded x264 is much faster; use 1 thread only for fastExport
+      const threads = videoProps.fastExport ? '1' : '4'
+      args.push('-threads', threads)
       if (videoProps.profile) {
         args.push('-profile:v', videoProps.profile)
       }

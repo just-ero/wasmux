@@ -160,7 +160,10 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (isFormElement(e.target)) return
-      if (e.target instanceof HTMLVideoElement) return
+      // Allow frame stepping hotkeys even when video has focus, but block other hotkeys from video
+      const isVideoTarget = e.target instanceof HTMLVideoElement
+      const isFrameSteppingKey = e.key === HOTKEYS.prevFrame[0] || e.key === HOTKEYS.nextFrame[0]
+      if (isVideoTarget && !isFrameSteppingKey) return
       if (e.repeat && !repeatableHotkeys.has(e.key)) return
 
       switch (e.key) {

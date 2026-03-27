@@ -24,8 +24,8 @@ const defaultProbe: ProbeResult = {
 
 const defaultVideoProps: VideoProps = {
   codec: 'copy',
-  preset: 'medium',
-  crf: 23,
+  preset: 'fast',
+  crf: 25,
   profile: 'high',
   tune: '',
   width: null,
@@ -35,6 +35,8 @@ const defaultVideoProps: VideoProps = {
   trackIndex: 0,
   subtitleTrackIndex: null,
   keepAspectRatio: true,
+  preciseFrameCuts: false,
+  fastExport: false,
 }
 
 const defaultAudioProps: AudioProps = {
@@ -159,7 +161,7 @@ describe('buildCommand', () => {
 
   describe('trimming', () => {
     it('adds -ss and -t when trimmed', () => {
-      setup({ selections: [{ id: 'full', start: 30, end: 89 }] })
+      setup({ selections: [{ id: 'full', start: 30, end: 89 }], videoProps: { codec: 'copy', preciseFrameCuts: false } })
       const { args } = buildCommand('mp4')
       expect(args).toContain('-ss')
       expect(args).toContain('-t')
@@ -208,7 +210,7 @@ describe('buildCommand', () => {
       setup({
         probe: { fps: 30, format: 'mp4' },
         selections: [{ id: 'full', start: 37, end: 121 }],
-        videoProps: { codec: 'copy' },
+        videoProps: { codec: 'copy', preciseFrameCuts: false },
         audioProps: { codec: 'copy' },
       })
       const { args, needsReencode } = buildCommand('mp4')
@@ -357,7 +359,7 @@ describe('buildCommand', () => {
       expect(args).toContain('-pix_fmt')
       expect(args[args.indexOf('-pix_fmt') + 1]).toBe('yuv420p')
       expect(args).toContain('-threads')
-      expect(args[args.indexOf('-threads') + 1]).toBe('1')
+      expect(args[args.indexOf('-threads') + 1]).toBe('4')
     })
 
     it('falls back to libx264 when video copy + crop forces reencode', () => {
@@ -438,7 +440,7 @@ describe('buildCommand', () => {
       expect(args[args.indexOf('-c:v') + 1]).toBe('libvpx')
       expect(args[args.indexOf('-deadline') + 1]).toBe('realtime')
       expect(args[args.indexOf('-cpu-used') + 1]).toBe('8')
-      expect(args[args.indexOf('-crf') + 1]).toBe('31')
+      expect(args[args.indexOf('-crf') + 1]).toBe('33')
       expect(args[args.indexOf('-b:v') + 1]).toBe('0')
       expect(args[args.indexOf('-c:a') + 1]).toBe('libvorbis')
     })

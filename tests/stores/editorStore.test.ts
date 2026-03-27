@@ -35,7 +35,7 @@ function reset() {
     selections: [],
     crop: null,
     cropMode: false,
-    videoProps: { codec: 'copy', preset: 'medium', crf: 23, profile: 'high', tune: '', width: null, height: null, fps: null, speed: 1, trackIndex: 0, subtitleTrackIndex: null, keepAspectRatio: true },
+    videoProps: { codec: 'copy', preset: 'fast', crf: 25, profile: 'high', tune: '', width: null, height: null, fps: null, speed: 1, trackIndex: 0, subtitleTrackIndex: null, keepAspectRatio: true, preciseFrameCuts: false, fastExport: false },
     audioProps: { codec: 'copy', bitrate: 128, volume: 1, speed: 1, pitch: 0, trackIndex: 0 },
     outputFormat: 'source',
     activeTab: 'video',

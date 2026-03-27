@@ -118,6 +118,8 @@ export interface VideoProps {
   trackIndex: number | null // which video stream to use (null = no video / audio-only export)
   subtitleTrackIndex: number | null // burn-in subs (null = none)
   keepAspectRatio: boolean
+  preciseFrameCuts: boolean // force re-encode to cut at exact frames instead of keyframes
+  fastExport: boolean      // trade frame precision for speed: uses keyframe snapping + ultrafast preset
 }
 
 /** all audio encoding / transform parameters. */
