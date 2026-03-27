@@ -50,20 +50,10 @@ jobs:
         run: pnpm build
 
       - name: Deploy to just-ero.github.io
-        if: ${{ secrets.PAGES_REPO_TOKEN != '' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
           personal_token: ${{ secrets.PAGES_REPO_TOKEN }}
           external_repository: just-ero/just-ero.github.io
           publish_branch: main
           publish_dir: ./dist
-          destination_dir: wasmux
-
-      - name: Deploy to wasmux gh-pages fallback
-        if: ${{ secrets.PAGES_REPO_TOKEN == '' }}
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          publish_branch: gh-pages
           destination_dir: wasmux
