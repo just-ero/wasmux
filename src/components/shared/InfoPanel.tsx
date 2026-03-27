@@ -17,7 +17,8 @@ const WINDOW_MS = 60_000
 const FONT_MEDIUM = '1rem'
 const FONT_SMALL = '0.875rem'
 const CLICKABLE_LINK_STYLE = 'text-accent font-semibold italic hover:underline decoration-[1.5px] underline-offset-2'
-const MAJOR_TICK_SEQUENCE = [4, 8, 16, 24, 32, 48, 64, 96, 128, 256, 384, 512, 1024] as const
+const MAJOR_TICK_SEQUENCE = [4, 8, 16, 24, 32, 48, 64, 96, 128, 256, 512, 1024] as const
+const HIDDEN_TICKS = new Set([1536])
 const GRAPH_LEFT_GUTTER = 40
 const GRAPH_TOP_GUTTER = 8
 
@@ -37,7 +38,7 @@ function buildMajorTicks(yMax: number): number[] {
 
   for (const value of MAJOR_TICK_SEQUENCE) {
     if (value > yMax) break
-    ticks.push(value)
+    if (!HIDDEN_TICKS.has(value)) ticks.push(value)
   }
 
   if (ticks.length === 0) ticks.push(4)
@@ -45,7 +46,7 @@ function buildMajorTicks(yMax: number): number[] {
   let tail = ticks[ticks.length - 1]
   while (tail < yMax) {
     tail += 512
-    if (tail <= yMax) ticks.push(tail)
+    if (tail <= yMax && !HIDDEN_TICKS.has(tail)) ticks.push(tail)
   }
 
   return ticks
@@ -67,7 +68,7 @@ function buildMinorGridTicks(yMax: number, majorTicks: number[]): number[] {
   const majorSet = new Set(majorTicks)
   const ticks: number[] = []
   for (let value = step; value <= yMax; value += step) {
-    if (!majorSet.has(value)) ticks.push(value)
+    if (!majorSet.has(value) && !HIDDEN_TICKS.has(value)) ticks.push(value)
   }
   return ticks
 }
