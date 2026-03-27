@@ -13,6 +13,12 @@ import type {
   VideoProps,
 } from '@/types/editor'
 
+function areCropsEqual(a: CropRegion | null, b: CropRegion | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+}
+
 /* sensible defaults for a freshly-loaded file */
 const defaultVideoProps: VideoProps = {
   codec: 'copy',        // stream-copy by default (fastest, lossless)
@@ -206,16 +212,21 @@ export const useEditorStore = create<EditorState>((set) => ({
     }),
   setCrop: (crop) =>
     set((s) => {
-      if (!crop) return { crop: null }
+      if (!crop) {
+        if (s.crop === null) return s
+        return { crop: null }
+      }
       const w = s.probe?.width ?? Infinity
       const h = s.probe?.height ?? Infinity
+      const nextCrop = {
+        x: Math.max(0, Math.min(crop.x, w)),
+        y: Math.max(0, Math.min(crop.y, h)),
+        width: Math.max(1, Math.min(crop.width, w - Math.max(0, crop.x))),
+        height: Math.max(1, Math.min(crop.height, h - Math.max(0, crop.y))),
+      }
+      if (areCropsEqual(s.crop, nextCrop)) return s
       return {
-        crop: {
-          x: Math.max(0, Math.min(crop.x, w)),
-          y: Math.max(0, Math.min(crop.y, h)),
-          width: Math.max(1, Math.min(crop.width, w - Math.max(0, crop.x))),
-          height: Math.max(1, Math.min(crop.height, h - Math.max(0, crop.y))),
-        },
+        crop: nextCrop,
       }
     }),
   setCropMode: (cropMode) => set({ cropMode }),
