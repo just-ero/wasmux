@@ -34,7 +34,13 @@ jobs:
 
       - name: Update package.json
         run: |
-          npm version ${{ steps.version.outputs.VERSION }} --no-git-tag-version
+            CURRENT_VERSION=$(node -p "require('./package.json').version")
+            TARGET_VERSION="${{ steps.version.outputs.VERSION }}"
+            if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
+              echo "package.json already at $TARGET_VERSION; skipping version update"
+            else
+              npm version "$TARGET_VERSION" --no-git-tag-version
+            fi
 
       - name: Install dependencies
         run: pnpm install
