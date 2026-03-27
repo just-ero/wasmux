@@ -9,6 +9,7 @@ import { TransportBar } from '@/components/editor/TransportBar'
 import { Timeline } from '@/components/editor/Timeline'
 import { CropOverlay } from '@/components/editor/CropOverlay'
 import { KeyboardHelp } from '@/components/shared/KeyboardHelp'
+import { InfoPanel } from '@/components/shared/InfoPanel'
 import { HOTKEYS, matchesHotkey } from '@/lib/hotkeys'
 import { isFormElement } from '@/lib/domUtils'
 import type { Theme } from '@/hooks/useTheme'
@@ -20,13 +21,74 @@ interface Props {
 }
 
 export function EditorView({ onClose, theme, onToggleTheme }: Props) {
+  const MAX_RESOLUTION = 8192
+  const UNLOCKED_STEP_PX = 16
   const videoRef = useRef<HTMLVideoElement>(null)
   const mainRef = useRef<HTMLDivElement>(null)
   const panelHeight = useLogStore((s) => s.panelHeight)
   const [pressedKey, setPressedKey] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
   const setCrop = useEditorStore((s) => s.setCrop)
+  const setVideoProps = useEditorStore((s) => s.setVideoProps)
   const probe = useEditorStore((s) => s.probe)
+  const previewUrl = useEditorStore((s) => s.previewUrl)
+  const videoTrackIndex = useEditorStore((s) => s.videoProps.trackIndex)
+  const resolutionWidth = useEditorStore((s) => s.videoProps.width)
+  const resolutionHeight = useEditorStore((s) => s.videoProps.height)
+  const keepAspectRatio = useEditorStore((s) => s.videoProps.keepAspectRatio)
+
+  const onPreviewWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!previewUrl || videoTrackIndex === null || !probe) return
+    if (e.ctrlKey || e.metaKey) return
+    if (isFormElement(e.target)) return
+
+    const sourceW = Math.max(1, probe.width || 1)
+    const sourceH = Math.max(1, probe.height || 1)
+
+    const currentW = resolutionWidth !== null && resolutionWidth > 0
+      ? Math.max(1, Math.round(resolutionWidth))
+      : sourceW
+    const currentH = resolutionHeight !== null && resolutionHeight > 0
+      ? Math.max(1, Math.round(resolutionHeight))
+      : sourceH
+
+    const direction = e.deltaY < 0 ? 1 : -1
+
+    if (keepAspectRatio) {
+      // Use source dimensions as the scale baseline so each tick maps to
+      // visible factor changes (e.g. 1.00 -> 0.95 at one downward tick).
+      const rawScalar = Math.min(currentW / sourceW, currentH / sourceH)
+      const currentScalar = Math.round(rawScalar * 100) / 100
+      const minScalar = 1 / Math.max(sourceW, sourceH)
+      const maxScalar = MAX_RESOLUTION / Math.max(sourceW, sourceH)
+      const isOne = Math.abs(currentScalar - 1) < 1e-9
+      const isTenth = Math.abs(currentScalar - 0.1) < 1e-9
+      const scalarStep = isOne
+        ? (direction > 0 ? 0.1 : 0.05)
+        : isTenth
+          ? (direction > 0 ? 0.05 : 0.01)
+          : currentScalar > 1
+            ? 0.1
+            : currentScalar > 0.1
+              ? 0.05
+              : 0.01
+      const nextScalar = Math.max(
+        minScalar,
+        Math.min(maxScalar, currentScalar + direction * scalarStep),
+      )
+      const exactW = Math.max(1, Math.min(MAX_RESOLUTION, Math.round(sourceW * nextScalar)))
+      const exactH = Math.max(1, Math.min(MAX_RESOLUTION, Math.round(sourceH * nextScalar)))
+
+      setVideoProps({ width: exactW, height: exactH })
+      return
+    }
+
+    const delta = direction * UNLOCKED_STEP_PX
+    const nextW = Math.max(1, Math.min(MAX_RESOLUTION, currentW + delta))
+    const nextH = Math.max(1, Math.min(MAX_RESOLUTION, currentH + delta))
+    setVideoProps({ width: nextW, height: nextH })
+  }
 
   // move focus into the editor when it mounts (landing → editor transition)
   useEffect(() => {
@@ -91,10 +153,16 @@ export function EditorView({ onClose, theme, onToggleTheme }: Props) {
       className="flex flex-col h-dvh outline-none"
       style={{ paddingBottom: `${panelHeight}px` }}
     >
-      <EditorHeader onClose={onClose} theme={theme} onToggleTheme={onToggleTheme} onShowHelp={() => setHelpOpen(true)} />
+      <EditorHeader
+        onClose={onClose}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        onShowHelp={() => setHelpOpen(true)}
+        onShowInfo={() => setInfoOpen(true)}
+      />
 
       {/* video area with crop overlay */}
-      <div className="relative flex-1 flex min-h-0">
+      <div className="relative flex-1 flex min-h-0" onWheel={onPreviewWheel} title="Scroll to zoom output resolution preview">
         <VideoPlayer videoRef={videoRef} />
         <CropOverlay videoRef={videoRef} />
       </div>
@@ -107,6 +175,7 @@ export function EditorView({ onClose, theme, onToggleTheme }: Props) {
 
       {/* keyboard help modal */}
       <KeyboardHelp isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+      <InfoPanel isOpen={infoOpen} onClose={() => setInfoOpen(false)} />
     </div>
   )
 }

@@ -14,9 +14,10 @@ interface Props {
   theme: Theme
   onToggleTheme: () => void
   onShowHelp: () => void
+  onShowInfo: () => void
 }
 
-export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp }: Props) {
+export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp, onShowInfo }: Props) {
   const file = useEditorStore((s) => s.file)
 
   if (!file) return null
@@ -43,12 +44,20 @@ export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp }: Prop
 
       <div className="flex items-center text-text-muted ml-auto shrink-0" style={{ gap: 'calc(var(--wasmux-edge-space) * 1.5)' }}>
         <button
+          onClick={onShowInfo}
+          className="btn shrink-0"
+          aria-label="Info panel"
+          title="Info panel"
+        >
+          <Icons.UiInfo />
+        </button>
+        <button
           onClick={onShowHelp}
           className="btn shrink-0"
           aria-label="Keyboard shortcuts (press ?)"
           title="Keyboard shortcuts"
         >
-          <Icons.UiInfo />
+          <Icons.Keyboard width={18} height={18} strokeWidth={1.7} />
         </button>
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>

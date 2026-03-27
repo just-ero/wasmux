@@ -12,10 +12,46 @@ export function timeToFrame(seconds: number, fps: number): number {
   return Math.round(seconds * fps)
 }
 
+/** convert seconds to frame index using floor (monotonic during playback). */
+export function timeToFrameFloor(seconds: number, fps: number): number {
+  if (fps <= 0) return 0
+  return Math.floor(seconds * fps + 1e-9)
+}
+
+/** derive total frame count from duration/fps, keeping any fractional tail as a final frame. */
+export function totalFramesFromDuration(durationSeconds: number, fps: number): number {
+  if (fps <= 0 || durationSeconds <= 0) return 0
+  return Math.max(1, Math.ceil(durationSeconds * fps))
+}
+
 /** clamp frame to [0, totalFrames - 1]. */
 export function clampFrame(frame: number, totalFrames: number): number {
   if (totalFrames <= 0) return 0
   return Math.max(0, Math.min(frame, totalFrames - 1))
+}
+
+/** remap a frame index between two fps domains using timeline time as the source of truth. */
+export function remapFrameIndex(frame: number, fromFps: number, toFps: number, totalFramesHint?: number): number {
+  if (fromFps <= 0 || toFps <= 0) {
+    const rounded = Math.max(0, Math.round(frame))
+    return totalFramesHint !== undefined ? clampFrame(rounded, totalFramesHint) : rounded
+  }
+  const mapped = timeToFrame(frameToTime(frame, fromFps), toFps)
+  const nonNegative = Math.max(0, mapped)
+  return totalFramesHint !== undefined ? clampFrame(nonNegative, totalFramesHint) : nonNegative
+}
+
+/** snap a source frame to the nearest frame representable on a target fps grid. */
+export function snapFrameToFpsGrid(frame: number, sourceFps: number, gridFps: number, totalSourceFrames: number): number {
+  const clamped = clampFrame(Math.round(frame), totalSourceFrames)
+  if (sourceFps <= 0 || gridFps <= 0) return clamped
+
+  const seconds = frameToTime(clamped, sourceFps)
+  // Snap down to avoid forward jumps when resuming playback from a paused state.
+  const gridFrame = Math.max(0, Math.floor(seconds * gridFps + 1e-9))
+  const snappedSeconds = frameToTime(gridFrame, gridFps)
+  const snappedSourceFrame = timeToFrame(snappedSeconds, sourceFps)
+  return clampFrame(snappedSourceFrame, totalSourceFrames)
 }
 
 /** format frame as hh:mm:ss:ff. */
@@ -47,7 +83,7 @@ export function formatTime(seconds: number, maxSeconds: number): string {
   const h = Math.floor(totalSec / 3600)
 
   if (maxSeconds >= 3600) {
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${msStr}`
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${msStr}`
   }
   if (maxSeconds >= 600) {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${msStr}`

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
 import { useState } from 'react'
 import { TransportBar } from '@/components/editor/TransportBar'
@@ -17,9 +17,6 @@ const defaultVideoProps: VideoProps = {
   height: null,
   fps: null,
   speed: 1,
-  gifFps: null,
-  gifWidth: null,
-  gifHeight: null,
   trackIndex: 0,
   subtitleTrackIndex: null,
   keepAspectRatio: true,
@@ -146,5 +143,58 @@ describe('TransportBar hotkey repeat behavior', () => {
     fireEvent.keyDown(window, { key: 'ArrowLeft', repeat: true })
 
     expect(useEditorStore.getState().currentFrame).toBe(600)
+  })
+
+  it('snaps paused frame to the configured output fps grid', () => {
+    useEditorStore.getState().setVideoProps({ fps: 2 })
+
+    const video = document.createElement('video')
+    Object.defineProperty(video, 'duration', { value: 120, configurable: true })
+    video.currentTime = 0.4
+    const videoRef = { current: video } as React.RefObject<HTMLVideoElement | null>
+
+    const { getByText } = render(<Harness videoRef={videoRef} />)
+    fireEvent.pause(video)
+
+    // 2fps allows 0.0, 0.5, 1.0... so 0.4s snaps down to 0.0s.
+    expect(useEditorStore.getState().currentFrame).toBe(0)
+    expect(getByText('0:00.000 / 2:00.000')).toBeTruthy()
+  })
+
+  it('snaps seeked paused frame to the configured output fps grid', () => {
+    useEditorStore.getState().setVideoProps({ fps: 2 })
+
+    const video = document.createElement('video')
+    Object.defineProperty(video, 'duration', { value: 120, configurable: true })
+    video.currentTime = 0.2
+    const videoRef = { current: video } as React.RefObject<HTMLVideoElement | null>
+
+    render(<Harness videoRef={videoRef} />)
+    fireEvent.seeked(video)
+
+    // 0.2s is closer to 0.0s than 0.5s on a 2fps grid.
+    expect(useEditorStore.getState().currentFrame).toBe(0)
+  })
+
+  it('pauses immediately at custom fps without waiting for next visual frame', () => {
+    useEditorStore.getState().setVideoProps({ fps: 2 })
+
+    const video = document.createElement('video')
+    Object.defineProperty(video, 'duration', { value: 120, configurable: true })
+    Object.defineProperty(video, 'paused', { value: false, writable: true, configurable: true })
+    video.currentTime = 0.2
+    const pauseSpy = vi.fn(() => {
+      Object.defineProperty(video, 'paused', { value: true, writable: true, configurable: true })
+    })
+    Object.defineProperty(video, 'pause', { value: pauseSpy, configurable: true })
+    const videoRef = { current: video } as React.RefObject<HTMLVideoElement | null>
+
+    render(<Harness videoRef={videoRef} />)
+
+    // Trigger pause path while "playing".
+    fireEvent.keyDown(window, { key: ' ' })
+
+    // Pause should happen right away.
+    expect(pauseSpy).toHaveBeenCalledTimes(1)
   })
 })

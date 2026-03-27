@@ -1,6 +1,7 @@
 /** global editor state store. */
 
 import { create } from 'zustand'
+import { totalFramesFromDuration } from '@/lib/frameUtils'
 import type {
   AudioProps,
   CommandCenterTab,
@@ -30,9 +31,6 @@ const defaultVideoProps: VideoProps = {
   height: null,
   fps: null,
   speed: 1,
-  gifFps: null,
-  gifWidth: null,
-  gifHeight: null,
   trackIndex: 0,        // first video track
   subtitleTrackIndex: null,
   keepAspectRatio: true,
@@ -121,7 +119,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     showFrames: false,
 
   loadFile: (file, probe) => {
-    const totalFrames = probe.fps > 0 ? Math.round(probe.duration * probe.fps) : 0
+    const totalFrames = totalFramesFromDuration(probe.duration, probe.fps)
     set({
       file,
       probe,

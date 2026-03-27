@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   frameToTime,
   timeToFrame,
+  timeToFrameFloor,
+  totalFramesFromDuration,
   clampFrame,
+  snapFrameToFpsGrid,
   formatFrame,
   formatTime,
   formatFrameCompact,
@@ -60,6 +63,37 @@ describe('timeToFrame', () => {
   })
 })
 
+/* timetoframefloor */
+describe('timeToFrameFloor', () => {
+  it('converts with floor for monotonic playback stepping', () => {
+    expect(timeToFrameFloor(0.0, 30)).toBe(0)
+    expect(timeToFrameFloor(0.033, 30)).toBe(0)
+    expect(timeToFrameFloor(0.034, 30)).toBe(1)
+  })
+
+  it('returns 0 for invalid fps', () => {
+    expect(timeToFrameFloor(1.5, 0)).toBe(0)
+    expect(timeToFrameFloor(1.5, -1)).toBe(0)
+  })
+})
+
+/* totalframesfromduration */
+describe('totalFramesFromDuration', () => {
+  it('uses ceil to include trailing fractional frame coverage', () => {
+    // 6.9333s at 30fps = 207.999 -> 208, but if fractional exists (e.g. 208.1) keep the extra frame.
+    expect(totalFramesFromDuration(6.937, 30)).toBe(209)
+  })
+
+  it('returns at least one frame for any positive duration with valid fps', () => {
+    expect(totalFramesFromDuration(0.0001, 24)).toBe(1)
+  })
+
+  it('returns 0 for invalid duration/fps', () => {
+    expect(totalFramesFromDuration(0, 30)).toBe(0)
+    expect(totalFramesFromDuration(2, 0)).toBe(0)
+  })
+})
+
 /* clampframe */
 describe('clampFrame', () => {
   it('clamps negative frame to 0', () => {
@@ -84,6 +118,26 @@ describe('clampFrame', () => {
 
   it('allows frame 0 with totalFrames 1', () => {
     expect(clampFrame(0, 1)).toBe(0)
+  })
+})
+
+/* snapframetofpsgrid */
+describe('snapFrameToFpsGrid', () => {
+  it('snaps a source frame down to the previous 2fps boundary', () => {
+    // 6/30s = 0.2s. previous 2fps boundary is 0.0s (frame 0).
+    expect(snapFrameToFpsGrid(6, 30, 2, 300)).toBe(0)
+
+    // 12/30s = 0.4s. previous 2fps boundary is 0.0s (frame 0).
+    expect(snapFrameToFpsGrid(12, 30, 2, 300)).toBe(0)
+  })
+
+  it('acts as identity when source and grid fps match', () => {
+    expect(snapFrameToFpsGrid(47, 30, 30, 300)).toBe(47)
+  })
+
+  it('keeps a valid in-range grid-aligned frame near the source upper bound', () => {
+    // source last frame is 299 at 30fps -> 9.966s, floor-snapped to 2fps grid gives 9.5s (frame 285).
+    expect(snapFrameToFpsGrid(400, 30, 2, 300)).toBe(285)
   })
 })
 
@@ -132,7 +186,7 @@ describe('formatTime', () => {
   })
 
   it('formats hour-scale duration', () => {
-    expect(formatTime(3661.5, 4000)).toBe('01:01:01.500')
+    expect(formatTime(3661.5, 4000)).toBe('1:01:01.500')
   })
 
   it('formats 0 seconds', () => {

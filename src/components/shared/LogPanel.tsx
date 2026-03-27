@@ -388,12 +388,15 @@ export function LogPanel() {
   const isClosed = panelHeight === LOG_MIN_HEIGHT
   const isOpen = panelHeight > LOG_MIN_HEIGHT
   const visualActiveTab = isOpen ? activeTab : null
-  const activeSummary = useMemo(() => (isClosed ? findActiveLogSummary(entries) : null), [entries, isClosed])
+  const shouldShowActiveSummaryInHeader = visualActiveTab !== 'console'
+  const activeSummary = useMemo(
+    () => (shouldShowActiveSummaryInHeader ? findActiveLogSummary(entries) : null),
+    [entries, shouldShowActiveSummaryInHeader],
+  )
   const highlightedIds = useMemo(() => findHighlightedIds(entries, hoveredId), [entries, hoveredId])
-  const activeSummaryText = activeSummary
-    ? `${activeSummary.labels.join(' > ')}${activeSummary.progress > 0 ? ` ${Math.round(activeSummary.progress)}%` : ''}`
-    : ''
-  const logTabText = isClosed && activeSummary ? activeSummaryText : 'log'
+  const activeSummaryLabel = activeSummary ? activeSummary.labels.join(' > ') : ''
+  const activeSummaryProgressText = activeSummary && activeSummary.progress > 0 ? `${Math.round(activeSummary.progress)}%` : ''
+  const logTabText = activeSummary ? `${activeSummaryLabel}${activeSummaryProgressText ? ` ${activeSummaryProgressText}` : ''}` : 'log'
   const panelMaxHeight = Math.max(LOG_MIN_HEIGHT + 1, Math.floor(viewportHeight * 0.6))
   const selectedTabStyle = {
     color: 'var(--wasmux-accent)',
@@ -686,7 +689,13 @@ export function LogPanel() {
             onKeyDown={(e) => onTabKeyDown(e, 'console')}
             title={logTabText}
           >
-            {isClosed && activeSummary ? <span className="inline-flex items-center" style={{ gap: 'var(--wasmux-edge-space)' }}><StatusPrefix status="running" /><span>{logTabText}</span></span> : logTabText}
+            {shouldShowActiveSummaryInHeader && activeSummary ? (
+              <span className="inline-flex items-center" style={{ gap: 'var(--wasmux-edge-space)' }}>
+                <StatusPrefix status="running" />
+                <span>{activeSummaryLabel}</span>
+                {activeSummaryProgressText && <span className="text-text-muted/75">{activeSummaryProgressText}</span>}
+              </span>
+            ) : logTabText}
           </button>
         </div>
         <div className="flex-1" />

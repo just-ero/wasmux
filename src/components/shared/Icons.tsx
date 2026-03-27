@@ -12,6 +12,7 @@ import ChevronSvg from '@/assets/icons/chevron.svg?react'
 import ExportSvg from '@/assets/icons/export.svg?react'
 import LinkSvg from '@/assets/icons/link.svg?react'
 import LinkOffSvg from '@/assets/icons/link-off.svg?react'
+import KeyboardSvg from '@/assets/icons/keyboard.svg?react'
 
 type P = SVGProps<SVGSVGElement>
 
@@ -65,3 +66,4 @@ export function ChevronRight(props: P) {
 export const Export = icon(ExportSvg)
 export const Link = icon(LinkSvg)
 export const LinkOff = icon(LinkOffSvg)
+export const Keyboard = icon(KeyboardSvg)

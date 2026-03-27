@@ -35,7 +35,7 @@ function reset() {
     selections: [],
     crop: null,
     cropMode: false,
-    videoProps: { codec: 'copy', preset: 'medium', crf: 23, profile: 'high', tune: '', width: null, height: null, fps: null, speed: 1, gifFps: null, gifWidth: null, gifHeight: null, trackIndex: 0, subtitleTrackIndex: null, keepAspectRatio: true },
+    videoProps: { codec: 'copy', preset: 'medium', crf: 23, profile: 'high', tune: '', width: null, height: null, fps: null, speed: 1, trackIndex: 0, subtitleTrackIndex: null, keepAspectRatio: true },
     audioProps: { codec: 'copy', bitrate: 128, volume: 1, speed: 1, pitch: 0, trackIndex: 0 },
     outputFormat: 'source',
     activeTab: 'video',
@@ -213,6 +213,20 @@ describe('setVideoProps / setAudioProps', () => {
     expect(vp.crf).toBe(18)
     expect(vp.preset).toBe('fast')
     expect(vp.codec).toBe('copy') // unchanged default
+  })
+
+  it('does not change source timeline when output fps changes', () => {
+    useEditorStore.getState().loadFile(stubFile, { ...stubProbe, duration: 11.5, fps: 29.97 })
+    const before = useEditorStore.getState()
+    const beforeTotalFrames = before.totalFrames
+    const beforeSelection = before.selections[0]
+
+    useEditorStore.getState().setVideoProps({ fps: 1 })
+
+    const after = useEditorStore.getState()
+    expect(after.videoProps.fps).toBe(1)
+    expect(after.totalFrames).toBe(beforeTotalFrames)
+    expect(after.selections[0]).toEqual(beforeSelection)
   })
 
   it('merges partial audio props', () => {

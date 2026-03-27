@@ -1,9 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Icons from '@/components/shared/Icons'
 import { DangerXButton } from '@/components/shared/DangerXButton'
+import { LinkedDimensionInput } from '@/components/shared/LinkedDimensionInput'
+import { SegmentedTimeInput } from '@/components/shared/SegmentedTimeInput'
 import { TrimRibbonVisual } from '@/components/editor/TrimRibbonVisual'
 import { useEditorStore } from '@/stores/editorStore'
-import { clampFrame, formatFrameCompact, formatFramePadded, formatTime, frameToTime, timeToFrame } from '@/lib/frameUtils'
+import { clampFrame, formatFrameCompact, formatFramePadded, formatTime, frameToTime, remapFrameIndex, timeToFrame, totalFramesFromDuration } from '@/lib/frameUtils'
+import { lockFocusedInputWheelScroll } from '@/lib/domUtils'
 import type { AudioCodec, VideoCodec } from '@/types/editor'
 
 const VIDEO_CODECS: VideoCodec[] = ['copy', 'libx264', 'libvpx-vp9', 'mpeg4', 'libtheora']
@@ -15,6 +18,14 @@ function parseIntOrNull(value: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+function formatFpsPlaceholder(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function formatFpsValue(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 function GroupTitle({ title }: { title: string }) {
   return (
     <div className="pt-1 text-[12px] font-semibold text-text/90">
@@ -22,6 +33,10 @@ function GroupTitle({ title }: { title: string }) {
       <div className="mt-0.5 h-px bg-border/60" />
     </div>
   )
+}
+
+function SettingResetButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return <DangerXButton label={label} onClick={onClick} />
 }
 
 function PropertyRow({ label, labelWidth, children }: { label: string; labelWidth: string; children: React.ReactNode }) {
@@ -96,22 +111,72 @@ function PropertiesPanelImpl() {
   const setVideoProps = useEditorStore((s) => s.setVideoProps)
   const audioProps = useEditorStore((s) => s.audioProps)
   const setAudioProps = useEditorStore((s) => s.setAudioProps)
+  const fpsInputRef = useRef<HTMLInputElement>(null)
+  const cropXRef = useRef<HTMLInputElement>(null)
+  const cropYRef = useRef<HTMLInputElement>(null)
+  const cropWRef = useRef<HTMLInputElement>(null)
+  const cropHRef = useRef<HTMLInputElement>(null)
+  const trimInRef = useRef<HTMLInputElement>(null)
+  const trimOutRef = useRef<HTMLInputElement>(null)
 
   const fps = probe?.fps ?? 0
   const duration = probe?.duration ?? 0
   const sel = selections[0]
   const start = sel?.start ?? 0
   const end = sel?.end ?? Math.max(0, totalFrames - 1)
+  const isTrimmed = start > 0 || end < Math.max(0, totalFrames - 1)
+  const displayFps = videoProps.fps && videoProps.fps > 0 ? videoProps.fps : fps
+  const displayTotalFrames = displayFps > 0 && duration > 0
+    ? totalFramesFromDuration(duration, displayFps)
+    : totalFrames
+  const startDisplay = remapFrameIndex(start, fps, displayFps, displayTotalFrames)
+  const endDisplay = remapFrameIndex(end, fps, displayFps, displayTotalFrames)
+  const startDisplayOne = displayTotalFrames > 0 ? startDisplay + 1 : 0
+  const endDisplayOne = displayTotalFrames > 0 ? endDisplay + 1 : 0
   const effectiveCrop = crop ?? { x: 0, y: 0, width: probe?.width ?? 0, height: probe?.height ?? 0 }
   const hasVideoTrackSelected = videoProps.trackIndex !== null
-  const inText = showFrames ? formatFrameCompact(start) : formatTime(fps > 0 ? frameToTime(start, fps) : 0, duration)
-  const outText = showFrames ? formatFrameCompact(end) : formatTime(fps > 0 ? frameToTime(end, fps) : 0, duration)
-  const trimDisplayInText = showFrames ? formatFramePadded(start, totalFrames) : inText
-  const trimDisplayOutText = showFrames ? formatFramePadded(end, totalFrames) : outText
+  const hasResolutionOverride = videoProps.width !== null || videoProps.height !== null
+  const inText = showFrames ? formatFrameCompact(startDisplayOne) : formatTime(fps > 0 ? frameToTime(start, fps) : 0, duration)
+  const outText = showFrames ? formatFrameCompact(endDisplayOne) : formatTime(fps > 0 ? frameToTime(end, fps) : 0, duration)
+  const trimInPlaceholder = showFrames ? '1' : formatTime(0, duration)
+  const trimOutPlaceholder = showFrames ? String(Math.max(1, displayTotalFrames)) : formatTime(duration, duration)
+  const trimDisplayInText = showFrames ? formatFramePadded(startDisplayOne, displayTotalFrames) : inText
+  const trimDisplayOutText = showFrames ? formatFramePadded(endDisplayOne, displayTotalFrames) : outText
   const trimFieldWidth = `${Math.max(16, Math.max(trimDisplayInText.length, trimDisplayOutText.length) + 4)}ch`
   const trimMockInPct = 0
   const trimMockOutPct = 100
   const trimMockKeyframePcts: number[] = []
+  const sourceScaleWidth = probe?.width ?? 1
+  const sourceScaleHeight = probe?.height ?? 1
+  const sourceScaleAspect = sourceScaleHeight > 0 ? sourceScaleWidth / sourceScaleHeight : 1
+  const effectiveOutputW = videoProps.width ?? (videoProps.height ? Math.max(1, Math.round(videoProps.height * sourceScaleAspect)) : sourceScaleWidth)
+  const effectiveOutputH = videoProps.height ?? (videoProps.width ? Math.max(1, Math.round(videoProps.width / sourceScaleAspect)) : sourceScaleHeight)
+  const cropStepX = Math.max(1, sourceScaleWidth / Math.max(1, effectiveOutputW))
+  const cropStepY = Math.max(1, sourceScaleHeight / Math.max(1, effectiveOutputH))
+  const sourceWidthPlaceholder = String(Math.max(1, Math.round(probe?.width ?? 1)))
+  const sourceHeightPlaceholder = String(Math.max(1, Math.round(probe?.height ?? 1)))
+  const defaultVideoTrackIndex = probe?.videoTracks[0]?.index ?? null
+  const defaultAudioTrackIndex = probe?.audioTracks[0]?.index ?? null
+  const cropWidthPlaceholder = String(Math.max(1, effectiveOutputW))
+  const cropHeightPlaceholder = String(Math.max(1, effectiveOutputH))
+  const cropUi = useMemo(() => ({
+    x: Math.round(effectiveCrop.x / cropStepX),
+    y: Math.round(effectiveCrop.y / cropStepY),
+    width: Math.max(1, Math.round(effectiveCrop.width / cropStepX)),
+    height: Math.max(1, Math.round(effectiveCrop.height / cropStepY)),
+  }), [effectiveCrop.x, effectiveCrop.y, effectiveCrop.width, effectiveCrop.height, cropStepX, cropStepY])
+
+  // scale factor shown next to resolution when aspect-locked
+  const resScaleFactor = useMemo(() => {
+    if (!hasResolutionOverride || !videoProps.keepAspectRatio) return null
+    const outW = videoProps.width ?? sourceScaleWidth
+    const outH = videoProps.height ?? sourceScaleHeight
+    const sx = outW / sourceScaleWidth
+    const sy = outH / sourceScaleHeight
+    const s = Math.min(sx, sy)
+    return s
+  }, [hasResolutionOverride, videoProps.keepAspectRatio, videoProps.width, videoProps.height, sourceScaleWidth, sourceScaleHeight])
+
   const [trimInValue, setTrimInValue] = useState(inText)
   const [trimOutValue, setTrimOutValue] = useState(outText)
 
@@ -132,16 +197,6 @@ function PropertiesPanelImpl() {
     if (!probe) return []
     return [
       {
-        id: 'resolution',
-        text: `resolution ${probe.width > 0 && probe.height > 0 ? `${probe.width}x${probe.height}` : 'missing'}`,
-        title: 'Source video resolution reported by the file.',
-      },
-      {
-        id: 'fps',
-        text: `fps ${probe.fps ? String(probe.fps) : 'missing'}`,
-        title: 'Source frame rate reported by the file.',
-      },
-      {
         id: 'bitrate',
         text: `bitrate ${videoBitrate.text}`,
         title: videoBitrate.title,
@@ -149,6 +204,22 @@ function PropertiesPanelImpl() {
       },
     ] satisfies SummaryItem[]
   }, [probe, videoBitrate.showInfoIcon, videoBitrate.text, videoBitrate.title])
+
+  useEffect(() => {
+    if (!fpsInputRef.current) return
+    return lockFocusedInputWheelScroll(fpsInputRef.current)
+  }, [])
+
+  useEffect(() => {
+    const refs = [cropXRef, cropYRef, cropWRef, cropHRef, trimInRef, trimOutRef]
+    const cleanups = refs
+      .map((r) => r.current)
+      .filter((el): el is HTMLInputElement => el !== null)
+      .map((el) => lockFocusedInputWheelScroll(el))
+    return () => {
+      cleanups.forEach((fn) => fn())
+    }
+  }, [])
 
   const audioSummary = useMemo(() => {
     if (!probe) return []
@@ -169,7 +240,11 @@ function PropertiesPanelImpl() {
   const parseTrimValue = useCallback((text: string): number | null => {
     const trimmed = text.trim()
     if (!trimmed) return null
-    if (/^\d+$/.test(trimmed)) return clampFrame(parseInt(trimmed, 10), totalFrames)
+    if (showFrames && /^\d+$/.test(trimmed)) {
+      const parsed = parseInt(trimmed, 10)
+      const displayFrame = clampFrame(parsed - 1, displayTotalFrames)
+      return remapFrameIndex(displayFrame, displayFps, fps, totalFrames)
+    }
     const parts = trimmed.split(':')
     let secs = 0
     if (parts.length === 1) secs = parseFloat(parts[0])
@@ -178,13 +253,115 @@ function PropertiesPanelImpl() {
     else return null
     if (Number.isNaN(secs) || !Number.isFinite(secs) || secs < 0) return null
     return clampFrame(fps > 0 ? timeToFrame(secs, fps) : 0, totalFrames)
-  }, [fps, totalFrames])
+  }, [showFrames, totalFrames, displayTotalFrames, displayFps, fps])
 
   const setCropField = useCallback((field: 'x' | 'y' | 'width' | 'height', raw: string) => {
     const next = parseIntOrNull(raw)
     if (next === null) return
-    setCrop({ ...effectiveCrop, [field]: Math.max(0, next) })
-  }, [effectiveCrop, setCrop])
+    const nextUiCrop = {
+      x: cropUi.x,
+      y: cropUi.y,
+      width: cropUi.width,
+      height: cropUi.height,
+      [field]: Math.max(0, next),
+    }
+    setCrop({
+      x: Math.max(0, Math.round(nextUiCrop.x * cropStepX)),
+      y: Math.max(0, Math.round(nextUiCrop.y * cropStepY)),
+      width: Math.max(1, Math.round(nextUiCrop.width * cropStepX)),
+      height: Math.max(1, Math.round(nextUiCrop.height * cropStepY)),
+    })
+  }, [cropUi.x, cropUi.y, cropUi.width, cropUi.height, cropStepX, cropStepY, setCrop])
+
+  const sourceFpsMax = probe?.fps && probe.fps > 0 ? probe.fps : 60
+  const sourceFpsPlaceholder = formatFpsPlaceholder(sourceFpsMax)
+  const fpsOverrideValue = videoProps.fps === null ? '' : formatFpsValue(Math.max(1, Math.min(sourceFpsMax, videoProps.fps)))
+  const handleFpsOverrideChange = useCallback((raw: string) => {
+    if (raw.trim() === '') {
+      setVideoProps({ fps: null })
+      return
+    }
+    const parsed = Number.parseFloat(raw)
+    if (!Number.isFinite(parsed)) return
+    setVideoProps({ fps: Math.max(1, Math.min(sourceFpsMax, parsed)) })
+  }, [sourceFpsMax, setVideoProps])
+
+  const handleFpsWheel = useCallback((e: React.WheelEvent<HTMLInputElement>) => {
+    if (document.activeElement !== e.currentTarget) return
+    e.stopPropagation()
+    const up = e.deltaY < 0
+    const current = videoProps.fps
+    const sourceFloor = Math.max(1, Math.floor(sourceFpsMax))
+
+    let next: number
+    if (current === null) {
+      next = up ? sourceFpsMax : sourceFloor
+    } else {
+      const clamped = Math.max(1, Math.min(sourceFpsMax, current))
+      if (up) {
+        if (clamped >= sourceFpsMax - 1e-9) next = sourceFpsMax
+        else next = Math.min(sourceFpsMax, Math.ceil(clamped + 1e-9))
+      } else if (Math.abs(clamped - Math.floor(clamped)) > 1e-9) {
+        next = Math.max(1, Math.floor(clamped))
+      } else {
+        next = Math.max(1, Math.floor(clamped) - 1)
+      }
+    }
+
+    setVideoProps({ fps: next })
+  }, [setVideoProps, sourceFpsMax, videoProps.fps])
+
+  const handleCropWheel = useCallback((
+    e: React.WheelEvent<HTMLInputElement>,
+    field: 'x' | 'y' | 'width' | 'height',
+    current: number,
+    min: number,
+  ) => {
+    if (document.activeElement !== e.currentTarget) return
+    e.stopPropagation()
+    const up = e.deltaY < 0
+    const next = Math.max(min, current + (up ? 1 : -1))
+    setCropField(field, String(next))
+  }, [setCropField])
+
+  const handleTrimWheel = useCallback((e: React.WheelEvent<HTMLInputElement>, kind: 'in' | 'out') => {
+    if (!showFrames) return
+    if (document.activeElement !== e.currentTarget) return
+    e.stopPropagation()
+    const up = e.deltaY < 0
+    const delta = up ? 1 : -1
+    if (kind === 'in') {
+      const nextDisplayOne = clampFrame(startDisplayOne + delta, displayTotalFrames + 1)
+      const nextDisplay = clampFrame(nextDisplayOne - 1, displayTotalFrames)
+      const nextSource = remapFrameIndex(nextDisplay, displayFps, fps, totalFrames)
+      setInPoint(nextSource)
+    } else {
+      const nextDisplayOne = clampFrame(endDisplayOne + delta, displayTotalFrames + 1)
+      const nextDisplay = clampFrame(nextDisplayOne - 1, displayTotalFrames)
+      const nextSource = remapFrameIndex(nextDisplay, displayFps, fps, totalFrames)
+      setOutPoint(nextSource)
+    }
+  }, [showFrames, startDisplayOne, endDisplayOne, displayTotalFrames, displayFps, fps, totalFrames, setInPoint, setOutPoint])
+
+  const handleResWidthChange = useCallback((w: number | null, linkedH: number | null) => {
+    if (linkedH !== undefined) {
+      setVideoProps({ width: w, height: linkedH })
+    } else {
+      setVideoProps({ width: w })
+    }
+  }, [setVideoProps])
+
+  const handleResHeightChange = useCallback((h: number | null, linkedW: number | null) => {
+    if (linkedW !== undefined) {
+      setVideoProps({ width: linkedW, height: h })
+    } else {
+      setVideoProps({ height: h })
+    }
+  }, [setVideoProps])
+
+  const handleResLinkedChange = useCallback((linked: boolean) => {
+    setVideoProps({ keepAspectRatio: linked })
+  }, [setVideoProps])
 
   const commitTrimIn = useCallback(() => {
     const frame = parseTrimValue(trimInValue)
@@ -197,6 +374,32 @@ function PropertiesPanelImpl() {
     if (frame !== null) setOutPoint(clampFrame(frame, totalFrames))
     setTrimOutValue(outText)
   }, [outText, parseTrimValue, setOutPoint, totalFrames, trimOutValue])
+
+  const trimInFieldValue = isTrimmed ? trimInValue : ''
+  const trimOutFieldValue = isTrimmed ? trimOutValue : ''
+
+  const commitTrimInSeconds = useCallback((seconds: number) => {
+    const frame = clampFrame(fps > 0 ? timeToFrame(seconds, fps) : 0, totalFrames)
+    setInPoint(frame)
+  }, [fps, setInPoint, totalFrames])
+
+  const commitTrimOutSeconds = useCallback((seconds: number) => {
+    const frame = clampFrame(fps > 0 ? timeToFrame(seconds, fps) : 0, totalFrames)
+    setOutPoint(frame)
+  }, [fps, setOutPoint, totalFrames])
+
+  const resetTrim = useCallback(() => {
+    const maxFrame = Math.max(0, totalFrames - 1)
+    setInPoint(0)
+    setOutPoint(maxFrame)
+    if (showFrames) {
+      setTrimInValue('1')
+      setTrimOutValue(String(Math.max(1, displayTotalFrames)))
+    } else {
+      setTrimInValue(formatTime(0, duration))
+      setTrimOutValue(formatTime(duration, duration))
+    }
+  }, [totalFrames, setInPoint, setOutPoint, showFrames, displayTotalFrames, duration])
 
   const labelWidth = useMemo(() => {
     const labels = activeTab === 'audio'
@@ -217,21 +420,33 @@ function PropertiesPanelImpl() {
           {hasVideoTrackSelected && (
             <PropertyRow label="crop" labelWidth={labelWidth}>
               <span className="text-[12px] text-text-muted select-text cursor-text">x</span>
-              <input aria-label="Crop X" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.x} onChange={(e) => setCropField('x', e.target.value)} />
+              <input ref={cropXRef} aria-label="Crop X" className="control-field control-field-number w-20 tabular-nums" type="text" inputMode="numeric" pattern="[0-9]*" value={crop ? cropUi.x : ''} placeholder="0" onChange={(e) => setCropField('x', e.target.value)} onWheel={(e) => handleCropWheel(e, 'x', cropUi.x, 0)} />
               <span className="text-[12px] text-text-muted select-text cursor-text">y</span>
-              <input aria-label="Crop Y" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.y} onChange={(e) => setCropField('y', e.target.value)} />
+              <input ref={cropYRef} aria-label="Crop Y" className="control-field control-field-number w-20 tabular-nums" type="text" inputMode="numeric" pattern="[0-9]*" value={crop ? cropUi.y : ''} placeholder="0" onChange={(e) => setCropField('y', e.target.value)} onWheel={(e) => handleCropWheel(e, 'y', cropUi.y, 0)} />
               <span className="text-[12px] text-text-muted select-text cursor-text">w</span>
-              <input aria-label="Crop width" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.width} onChange={(e) => setCropField('width', e.target.value)} />
+              <input ref={cropWRef} aria-label="Crop width" className="control-field control-field-number w-20 tabular-nums" type="text" inputMode="numeric" pattern="[0-9]*" value={crop ? cropUi.width : ''} placeholder={cropWidthPlaceholder} onChange={(e) => setCropField('width', e.target.value)} onWheel={(e) => handleCropWheel(e, 'width', cropUi.width, 1)} />
               <span className="text-[12px] text-text-muted select-text cursor-text">h</span>
-              <input aria-label="Crop height" className="control-field control-field-number w-20 tabular-nums" type="number" value={effectiveCrop.height} onChange={(e) => setCropField('height', e.target.value)} />
+              <input ref={cropHRef} aria-label="Crop height" className="control-field control-field-number w-20 tabular-nums" type="text" inputMode="numeric" pattern="[0-9]*" value={crop ? cropUi.height : ''} placeholder={cropHeightPlaceholder} onChange={(e) => setCropField('height', e.target.value)} onWheel={(e) => handleCropWheel(e, 'height', cropUi.height, 1)} />
               {crop && (
-                <DangerXButton label="Clear crop (Esc)" onClick={() => setCrop(null)} />
+                <SettingResetButton label="Reset crop (Esc)" onClick={() => setCrop(null)} />
               )}
             </PropertyRow>
           )}
           <PropertyRow label="trim" labelWidth={labelWidth}>
             <span className="shrink-0 text-text-muted select-text cursor-text">[</span>
-            <input aria-label="Trim in" className="control-field tabular-nums text-center" style={{ width: trimFieldWidth, textAlign: 'center' }} value={trimInValue} onChange={(e) => setTrimInValue(e.target.value)} onBlur={commitTrimIn} onKeyDown={(e) => { if (e.key === 'Enter') commitTrimIn(); if (e.key === 'Escape') setTrimInValue(inText) }} />
+            {showFrames ? (
+              <input ref={trimInRef} aria-label="Trim in" className="control-field tabular-nums text-center" style={{ width: trimFieldWidth, textAlign: 'center' }} value={trimInFieldValue} placeholder={trimInPlaceholder} onChange={(e) => setTrimInValue(e.target.value)} onBlur={commitTrimIn} onWheel={(e) => handleTrimWheel(e, 'in')} onKeyDown={(e) => { if (e.key === 'Enter') commitTrimIn(); if (e.key === 'Escape') setTrimInValue(inText) }} />
+            ) : (
+              <SegmentedTimeInput
+                ref={trimInRef}
+                ariaLabel="Trim in"
+                className="control-field tabular-nums text-center"
+                style={{ width: trimFieldWidth, textAlign: 'center' }}
+                valueSeconds={fps > 0 ? frameToTime(start, fps) : 0}
+                maxSeconds={duration}
+                onCommit={commitTrimInSeconds}
+              />
+            )}
             <div className="relative h-7 w-12 shrink-0 overflow-visible pointer-events-none select-none" aria-hidden="true">
               <TrimRibbonVisual
                 inPct={trimMockInPct}
@@ -242,15 +457,82 @@ function PropertiesPanelImpl() {
                 handleWidthPx={3}
               />
             </div>
-            <input aria-label="Trim out" className="control-field tabular-nums text-center" style={{ width: trimFieldWidth, textAlign: 'center' }} value={trimOutValue} onChange={(e) => setTrimOutValue(e.target.value)} onBlur={commitTrimOut} onKeyDown={(e) => { if (e.key === 'Enter') commitTrimOut(); if (e.key === 'Escape') setTrimOutValue(outText) }} />
+            {showFrames ? (
+              <input ref={trimOutRef} aria-label="Trim out" className="control-field tabular-nums text-center" style={{ width: trimFieldWidth, textAlign: 'center' }} value={trimOutFieldValue} placeholder={trimOutPlaceholder} onChange={(e) => setTrimOutValue(e.target.value)} onBlur={commitTrimOut} onWheel={(e) => handleTrimWheel(e, 'out')} onKeyDown={(e) => { if (e.key === 'Enter') commitTrimOut(); if (e.key === 'Escape') setTrimOutValue(outText) }} />
+            ) : (
+              <SegmentedTimeInput
+                ref={trimOutRef}
+                ariaLabel="Trim out"
+                className="control-field tabular-nums text-center"
+                style={{ width: trimFieldWidth, textAlign: 'center' }}
+                valueSeconds={fps > 0 ? frameToTime(end, fps) : 0}
+                maxSeconds={duration}
+                onCommit={commitTrimOutSeconds}
+              />
+            )}
             <span className="shrink-0 text-text-muted select-text cursor-text">]</span>
+            {isTrimmed && (
+              <SettingResetButton label="Reset trim" onClick={resetTrim} />
+            )}
           </PropertyRow>
 
-          <GroupTitle title="video output" />
+          <GroupTitle title="output sizing + timing" />
+          <PropertyRow label="fps" labelWidth={labelWidth}>
+            <input
+              ref={fpsInputRef}
+              aria-label="Output FPS"
+              className="control-field control-field-number w-20 tabular-nums"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              min={1}
+              max={sourceFpsMax}
+              step={1}
+              value={fpsOverrideValue}
+              placeholder={sourceFpsPlaceholder}
+              onChange={(e) => handleFpsOverrideChange(e.target.value)}
+              onWheel={handleFpsWheel}
+            />
+            {videoProps.fps !== null && (
+              <SettingResetButton label="Reset output FPS" onClick={() => setVideoProps({ fps: null })} />
+            )}
+          </PropertyRow>
+          <PropertyRow label="resolution" labelWidth={labelWidth}>
+            <LinkedDimensionInput
+              width={videoProps.width}
+              height={videoProps.height}
+              linked={videoProps.keepAspectRatio}
+              sourceAspect={sourceScaleAspect}
+              sourceWidth={sourceScaleWidth}
+              sourceHeight={sourceScaleHeight}
+              widthPlaceholder={sourceWidthPlaceholder}
+              heightPlaceholder={sourceHeightPlaceholder}
+              onWidthChange={handleResWidthChange}
+              onHeightChange={handleResHeightChange}
+              onLinkedChange={handleResLinkedChange}
+              ariaPrefix="Output"
+            />
+            {resScaleFactor !== null && (
+              <span
+                className="text-[11px] font-mono text-text-muted select-text cursor-text"
+                title={`${resScaleFactor < 1 ? 'Downscaled' : 'Upscaled'} to ${(resScaleFactor * 100).toFixed(0)}% of source`}
+              >
+                {resScaleFactor.toFixed(2).replace(/\.?0+$/, '')}×
+              </span>
+            )}
+            {hasResolutionOverride && (
+              <SettingResetButton label="Reset output resolution" onClick={() => setVideoProps({ width: null, height: null })} />
+            )}
+          </PropertyRow>
+
+          <GroupTitle title="video encoding" />
           <PropertyRow label="codec" labelWidth={labelWidth}>
             <select aria-label="Video codec" className="control-field" value={videoProps.codec} onChange={(e) => setVideoProps({ codec: e.target.value as VideoCodec })}>
               {VIDEO_CODECS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            {videoProps.codec !== 'copy' && (
+              <SettingResetButton label="Reset video codec" onClick={() => setVideoProps({ codec: 'copy' })} />
+            )}
           </PropertyRow>
           <PropertyRow label="video track" labelWidth={labelWidth}>
             <select
@@ -268,8 +550,13 @@ function PropertiesPanelImpl() {
                 <option key={t.index} value={t.index}>{t.label}</option>
               ))}
             </select>
+            {videoProps.trackIndex !== defaultVideoTrackIndex && (
+              <SettingResetButton label="Reset video track" onClick={() => {
+                setVideoProps({ trackIndex: defaultVideoTrackIndex })
+                if (defaultVideoTrackIndex === null) setCrop(null)
+              }} />
+            )}
           </PropertyRow>
-
         </div>
       )}
 
@@ -282,6 +569,9 @@ function PropertiesPanelImpl() {
             <select aria-label="Audio codec" className="control-field" value={audioProps.codec} onChange={(e) => setAudioProps({ codec: e.target.value as AudioCodec })}>
               {AUDIO_CODECS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+            {audioProps.codec !== 'copy' && (
+              <SettingResetButton label="Reset audio codec" onClick={() => setAudioProps({ codec: 'copy' })} />
+            )}
           </PropertyRow>
           <PropertyRow label="audio track" labelWidth={labelWidth}>
             <select
@@ -295,6 +585,9 @@ function PropertiesPanelImpl() {
                 <option key={t.index} value={t.index}>{t.label}</option>
               ))}
             </select>
+            {audioProps.trackIndex !== defaultAudioTrackIndex && (
+              <SettingResetButton label="Reset audio track" onClick={() => setAudioProps({ trackIndex: defaultAudioTrackIndex })} />
+            )}
           </PropertyRow>
         </div>
       )}
