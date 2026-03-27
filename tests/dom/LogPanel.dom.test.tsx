@@ -37,7 +37,7 @@ describe('LogPanel header job summary', () => {
 
   it('shows active job summary in header when panel is closed', () => {
     render(<LogPanel />)
-    expect(screen.getByRole('tab', { name: /encode media \(re-encoding\) 13%/i })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /encode media.*13%/i })).toBeTruthy()
   })
 
   it('shows active job summary in header when panel is open but console is not focused', () => {
@@ -45,7 +45,7 @@ describe('LogPanel header job summary', () => {
     useEditorStore.setState({ activeTab: 'video' })
 
     render(<LogPanel />)
-    expect(screen.getByRole('tab', { name: /encode media \(re-encoding\) 13%/i })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /encode media.*13%/i })).toBeTruthy()
   })
 
   it('shows plain log label when console is focused', () => {

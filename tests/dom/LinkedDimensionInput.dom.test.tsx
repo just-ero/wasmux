@@ -25,7 +25,8 @@ describe('LinkedDimensionInput wheel scaling', () => {
       />,
     )
 
-    const widthInput = screen.getByLabelText('Output width')
+    const widthInput = screen.getByLabelText('Output width') as HTMLInputElement
+    widthInput.focus()
     fireEvent.wheel(widthInput, { deltaY: 120 })
 
     expect(onWidthChange).toHaveBeenCalled()
