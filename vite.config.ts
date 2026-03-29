@@ -71,10 +71,18 @@ function corpHeaderPlugin() {
   } as Plugin
 }
 
-export default defineConfig(({ mode }) => ({
-  // Use /wasmux/ only for explicit GitHub Pages builds.
-  // Local production preview should stay at root (/).
-  base: mode === 'production' && process.env.WASMUX_BASE_PATH === '/wasmux/' ? '/wasmux/' : '/',
+export default defineConfig(({ mode }) => {
+  const isProduction = mode === 'production'
+  const isGitHubActions = process.env.GITHUB_ACTIONS === 'true'
+  const explicitBasePath = process.env.WASMUX_BASE_PATH
+  // GitHub Pages deploy target is just-ero.github.io/wasmux.
+  // Keep local preview at root unless an explicit base path is requested.
+  const base = isProduction && (explicitBasePath === '/wasmux/' || (!explicitBasePath && isGitHubActions))
+    ? '/wasmux/'
+    : '/'
+
+  return ({
+  base,
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
@@ -114,4 +122,5 @@ export default defineConfig(({ mode }) => ({
       ['tests/dom/**/*.test.tsx', 'jsdom'],
     ],
   },
-}))
+})
+})
