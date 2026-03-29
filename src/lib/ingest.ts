@@ -36,6 +36,20 @@ function canLikelyPlayNativeAudioCodec(codec: string): boolean {
     || normalized.startsWith('pcm_')
 }
 
+function canLikelyPlayNativeVideoSource(videoCodec: string, format: string): boolean {
+  const codec = normalizeCodecName(videoCodec)
+  const container = normalizeCodecName(format)
+
+  // Browsers do not reliably play GIF via <video>; use a compatibility preview.
+  if (codec === 'gif' || container.includes('gif')) return false
+
+  return codec === 'h264'
+    || codec === 'vp8'
+    || codec === 'vp9'
+    || codec === 'av1'
+    || codec === 'theora'
+}
+
 
 export function validateProbeForIngest(probe: ProbeResult): string | null {
   const hasVideo = probe.videoTracks.length > 0
@@ -269,8 +283,10 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
     } else {
       const hasAudioTrack = probe.audioTracks.length > 0
       const needsAudioCompatPreview = hasAudioTrack && !canLikelyPlayNativeAudioCodec(probe.audioCodec)
+      const needsVideoCompatPreview = !canLikelyPlayNativeVideoSource(probe.videoCodec, probe.format)
+      const needsCompatPreview = needsAudioCompatPreview || needsVideoCompatPreview
 
-      if (!needsAudioCompatPreview) {
+      if (!needsCompatPreview) {
         // Use source file directly for fastest startup.
         store.setPreviewUrl(objectUrl)
         setIngestProgress(95)
@@ -280,9 +296,10 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
           label: 'preparing preview',
         })
       } else {
-        // Browser likely won't decode source audio codec in preview; keep video stream copy
-        // and transcode only audio so the preview has sound.
-        const previewName = '_preview_audio_compat.mp4'
+        // Browser compatibility preview:
+        // - transcode GIF-like video sources to h264 for <video>
+        // - transcode unsupported audio codecs to aac
+        const previewName = '_preview_compat.mp4'
         stopStageTicker()
         let sawProgress = false
         let lastProgressAt = Date.now()
@@ -312,17 +329,32 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
         try {
           const videoTrackIndex = probe.videoTracks[0]?.index ?? 0
           const audioTrackIndex = probe.audioTracks[0]?.index ?? 0
-          setExecRunning(true)
-          await ffmpeg.exec([
+          const previewArgs = [
             '-progress', 'pipe:1',
             '-i', filename,
             '-map', `0:${videoTrackIndex}`,
-            '-map', `0:${audioTrackIndex}`,
-            '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-movflags', '+faststart',
-            previewName,
-          ])
+          ]
+
+          if (hasAudioTrack) {
+            previewArgs.push('-map', `0:${audioTrackIndex}`)
+          }
+
+          if (needsVideoCompatPreview) {
+            previewArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p')
+          } else {
+            previewArgs.push('-c:v', 'copy')
+          }
+
+          if (hasAudioTrack) {
+            previewArgs.push('-c:a', needsAudioCompatPreview ? 'aac' : 'copy')
+          } else {
+            previewArgs.push('-an')
+          }
+
+          previewArgs.push('-movflags', '+faststart', previewName)
+
+          setExecRunning(true)
+          await ffmpeg.exec(previewArgs)
 
           const data = await ffmpeg.readFile(previewName)
           const blob = new Blob([data as BlobPart], { type: 'video/mp4' })

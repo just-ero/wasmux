@@ -423,13 +423,6 @@ export function LogPanel() {
     setPanelHeight(clampPanelHeight(Math.max(DEFAULT_PANEL_HEIGHT, LOG_MIN_HEIGHT + 1)))
   }, [clampPanelHeight, setPanelHeight])
 
-  // Auto-open panel when activeTab is set to video/audio (e.g., from file load)
-  useEffect(() => {
-    if (activeTab !== 'console' && isClosed) {
-      openPanel()
-    }
-  }, [activeTab, isClosed, openPanel])
-
   const onTabClick = useCallback((tab: 'video' | 'audio' | 'console') => {
     if (tab === 'console' && !hasInitializedConsoleView.current) {
       initializeConsoleView()
@@ -460,12 +453,9 @@ export function LogPanel() {
     if (!dragging.current) return
     const dy = startY.current - e.clientY
     const raw = startH.current + dy
-    if (startH.current === LOG_MIN_HEIGHT && raw > LOG_MIN_HEIGHT && activeTab !== 'console') {
-      setActiveTab('console')
-    }
     const snapped = snap(raw, LOG_MIN_HEIGHT, SNAP_ZONE)
     setPanelHeight(clampPanelHeight(snapped))
-  }, [activeTab, clampPanelHeight, setActiveTab, setPanelHeight])
+  }, [clampPanelHeight, setPanelHeight])
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (e.pointerType === 'touch') return
@@ -485,12 +475,9 @@ export function LogPanel() {
     if (!dragging.current) return
     const dy = startY.current - clientY
     const raw = startH.current + dy
-    if (startH.current === LOG_MIN_HEIGHT && raw > LOG_MIN_HEIGHT && activeTab !== 'console') {
-      setActiveTab('console')
-    }
     const snapped = snap(raw, LOG_MIN_HEIGHT, SNAP_ZONE)
     setPanelHeight(clampPanelHeight(snapped))
-  }, [activeTab, clampPanelHeight, setActiveTab, setPanelHeight])
+  }, [clampPanelHeight, setPanelHeight])
 
   useEffect(() => {
     const onWindowPointerMove = (e: PointerEvent) => {

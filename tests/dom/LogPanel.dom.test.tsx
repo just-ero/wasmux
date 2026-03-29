@@ -55,4 +55,13 @@ describe('LogPanel header job summary', () => {
     render(<LogPanel />)
     expect(screen.getByRole('tab', { name: /^log$/i })).toBeTruthy()
   })
+
+  it('does not auto-open when active tab is video while panel is collapsed', () => {
+    useLogStore.setState({ panelHeight: 28 })
+    useEditorStore.setState({ activeTab: 'video' })
+
+    render(<LogPanel />)
+
+    expect(useLogStore.getState().panelHeight).toBe(28)
+  })
 })
