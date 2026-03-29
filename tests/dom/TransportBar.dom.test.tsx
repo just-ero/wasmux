@@ -147,9 +147,7 @@ describe('TransportBar hotkey repeat behavior', () => {
     expect(useEditorStore.getState().currentFrame).toBe(600)
   })
 
-  it('snaps paused frame to the configured output fps grid', () => {
-    useEditorStore.getState().setVideoProps({ fps: 2 })
-
+  it('does not force a passive pause frame sync', () => {
     const video = document.createElement('video')
     Object.defineProperty(video, 'duration', { value: 120, configurable: true })
     video.currentTime = 0.4
@@ -158,24 +156,8 @@ describe('TransportBar hotkey repeat behavior', () => {
     const { getByText } = render(<Harness videoRef={videoRef} />)
     fireEvent.pause(video)
 
-    // 2fps allows 0.0, 0.5, 1.0... so 0.4s snaps down to 0.0s.
     expect(useEditorStore.getState().currentFrame).toBe(0)
     expect(getByText('0:00.000 / 2:00.000')).toBeTruthy()
-  })
-
-  it('snaps seeked paused frame to the configured output fps grid', () => {
-    useEditorStore.getState().setVideoProps({ fps: 2 })
-
-    const video = document.createElement('video')
-    Object.defineProperty(video, 'duration', { value: 120, configurable: true })
-    video.currentTime = 0.2
-    const videoRef = { current: video } as React.RefObject<HTMLVideoElement | null>
-
-    render(<Harness videoRef={videoRef} />)
-    fireEvent.seeked(video)
-
-    // 0.2s is closer to 0.0s than 0.5s on a 2fps grid.
-    expect(useEditorStore.getState().currentFrame).toBe(0)
   })
 
   it('pauses immediately at custom fps without waiting for next visual frame', () => {

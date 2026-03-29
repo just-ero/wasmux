@@ -1,7 +1,6 @@
 /** global editor state store. */
 
 import { create } from 'zustand'
-import { totalFramesFromDuration } from '@/lib/frameUtils'
 import type {
   AudioProps,
   CommandCenterTab,
@@ -60,6 +59,10 @@ interface EditorState {
   totalFrames: number
   /** current playhead position in frames. */
   currentFrame: number
+  /** when true, ignore video-driven frame sync updates (used during seek drags). */
+  suppressVideoFrameSync: boolean
+  /** true while a seek-drag pointer is held; cleared on pointerUp, used by onSeeked to distinguish mid-drag from post-drag. */
+  seekDragActive: boolean
   /** keyframe positions (frame numbers), populated asynchronously. */
   keyframes: number[]
   /** where we are in the ingestion pipeline. */
@@ -87,6 +90,8 @@ interface EditorState {
   /** set the preview blob url, revoking any previous one first. */
   setPreviewUrl: (url: string | null) => void
   setCurrentFrame: (f: number) => void
+  setSuppressVideoFrameSync: (v: boolean) => void
+  setSeekDragActive: (v: boolean) => void
   setKeyframes: (kf: number[]) => void
   setIngestionStatus: (s: IngestionStatus) => void
   setSelections: (s: Selection[]) => void
@@ -99,7 +104,7 @@ interface EditorState {
   setOutputFormat: (f: OutputFormat) => void
   setActiveTab: (t: CommandCenterTab) => void
   setExporting: (v: boolean) => void
-    setShowFrames: (v: boolean) => void
+  setShowFrames: (v: boolean) => void
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -108,6 +113,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   previewUrl: null,
   totalFrames: 0,
   currentFrame: 0,
+  suppressVideoFrameSync: false,
+  seekDragActive: false,
   keyframes: [],
   ingestionStatus: 'idle',
   selections: [],
@@ -116,12 +123,12 @@ export const useEditorStore = create<EditorState>((set) => ({
   videoProps: { ...defaultVideoProps },
   audioProps: { ...defaultAudioProps },
   outputFormat: 'source',
-    activeTab: 'console',
+  activeTab: 'console',
   isExporting: false,
-    showFrames: false,
+  showFrames: false,
 
   loadFile: (file, probe) => {
-    const totalFrames = totalFramesFromDuration(probe.duration, probe.fps)
+      const totalFrames = probe.fps > 0 ? Math.round(probe.duration * probe.fps) : 0
     set({
       file,
       probe,
@@ -143,10 +150,12 @@ export const useEditorStore = create<EditorState>((set) => ({
       if (s.previewUrl) URL.revokeObjectURL(s.previewUrl)
       return {
       file: null,
-        probe: null,
+      probe: null,
       previewUrl: null,
       totalFrames: 0,
       currentFrame: 0,
+      suppressVideoFrameSync: false,
+      seekDragActive: false,
       keyframes: [],
       ingestionStatus: 'idle',
       selections: [],
@@ -155,9 +164,9 @@ export const useEditorStore = create<EditorState>((set) => ({
       videoProps: { ...defaultVideoProps },
       audioProps: { ...defaultAudioProps },
       outputFormat: 'source',
-        activeTab: 'console',
+      activeTab: 'console',
       isExporting: false,
-        showFrames: false,
+      showFrames: false,
     }}),
 
   setPreviewUrl: (previewUrl) =>
@@ -166,6 +175,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       return { previewUrl }
     }),
   setCurrentFrame: (currentFrame) => set({ currentFrame }),
+  setSuppressVideoFrameSync: (suppressVideoFrameSync) => set({ suppressVideoFrameSync }),
+  setSeekDragActive: (seekDragActive) => set({ seekDragActive }),
   setKeyframes: (keyframes) => set({ keyframes }),
   setIngestionStatus: (ingestionStatus) => set({ ingestionStatus }),
   setSelections: (selections) =>

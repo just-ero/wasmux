@@ -7,19 +7,16 @@ import coreWasmUrl from '@ffmpeg/core/wasm?url'
 /** loaded ffmpeg instance, if available. */
 let instance: FFmpeg | null = null
 
-const FFmpeg_LOAD_TIMEOUT_ST_MS = 25000
+const FFmpeg_LOAD_TIMEOUT_MS = 25000
 
 /** shared in-flight load promise. */
 let loadPromise: Promise<FFmpeg> | null = null
-
-/** cached core asset urls reused across resets. */
-let cachedURLs: { coreURL: string; wasmURL: string } | null = null
 
 function stripQuery(url: string): string {
   return url.replace(/\?.*$/, '')
 }
 
-function buildSingleThreadURLs(): { coreURL: string; wasmURL: string } {
+function buildURLs(): { coreURL: string; wasmURL: string } {
   return {
     coreURL: stripQuery(coreJsUrl),
     wasmURL: stripQuery(coreWasmUrl),
@@ -57,44 +54,14 @@ export function getFFmpeg(cbs?: LoadCallbacks): Promise<FFmpeg> {
   if (loadPromise) return loadPromise
 
   loadPromise = (async () => {
-    let ffmpeg = new FFmpeg()
+    const ffmpeg = new FFmpeg()
     instance = ffmpeg
-    const singleThreadURLs = buildSingleThreadURLs()
-    const preferred = singleThreadURLs
-    const preferredTimeout = FFmpeg_LOAD_TIMEOUT_ST_MS
-
-    if (cachedURLs) {
-      try {
-        await loadWithTimeout(ffmpeg, cachedURLs, preferredTimeout)
-        return ffmpeg
-      } catch {
-        try {
-          ffmpeg.terminate()
-        } catch {
-          // no-op
-        }
-
-        ffmpeg = new FFmpeg()
-        instance = ffmpeg
-        await loadWithTimeout(ffmpeg, singleThreadURLs, FFmpeg_LOAD_TIMEOUT_ST_MS)
-        cachedURLs = singleThreadURLs
-        return ffmpeg
-      }
-    }
-
     cbs?.onDownloading?.()
     cbs?.onInitializing?.()
-
-    try {
-      await loadWithTimeout(ffmpeg, preferred, preferredTimeout)
-      cachedURLs = preferred
-      return ffmpeg
-    } catch (err) {
-      throw err
-    }
+    await loadWithTimeout(ffmpeg, buildURLs(), FFmpeg_LOAD_TIMEOUT_MS)
+    return ffmpeg
   })()
 
-  // on failure, clear both so the next call retries from scratch.
   loadPromise.catch(() => {
     loadPromise = null
     instance = null
@@ -103,6 +70,11 @@ export function getFFmpeg(cbs?: LoadCallbacks): Promise<FFmpeg> {
   return loadPromise
 }
 
+/** whether ffmpeg.exec is currently running (to know if we need to terminate on cancel). */
+let execRunning = false
+
+export function setExecRunning(v: boolean) { execRunning = v }
+
 /** terminate and clear the current ffmpeg instance. */
 export function resetFFmpeg() {
   if (instance) {
@@ -110,6 +82,17 @@ export function resetFFmpeg() {
     instance = null
   }
   loadPromise = null
+  execRunning = false
+}
+
+/**
+ * Cancel any in-flight exec without tearing down the loaded wasm instance.
+ * Only terminates if an exec is actually running.
+ */
+export function cancelExec() {
+  if (execRunning) {
+    resetFFmpeg()
+  }
 }
 
 /** return loaded ffmpeg instance, or null. */

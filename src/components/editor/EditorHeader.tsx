@@ -46,8 +46,8 @@ export function EditorHeader({ onClose, theme, onToggleTheme, onShowHelp, onShow
         <button
           onClick={onShowInfo}
           className="btn shrink-0"
-          aria-label="Info panel"
-          title="Info panel"
+          aria-label="info panel"
+          title="info panel"
         >
           <Icons.UiInfo />
         </button>

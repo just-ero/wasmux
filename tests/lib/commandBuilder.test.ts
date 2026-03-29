@@ -415,8 +415,19 @@ describe('buildCommand', () => {
       expect(args[args.indexOf('-c:v') + 1]).toBe('gif')
       expect(args).toContain('-vf')
       expect(args[args.indexOf('-vf') + 1]).toContain('crop=')
-      expect(args[args.indexOf('-vf') + 1]).toContain('fps=8')
-      expect(args[args.indexOf('-vf') + 1]).toContain('scale=min(480\\,iw):-1:flags=fast_bilinear')
+      expect(args[args.indexOf('-vf') + 1]).toContain('fps=30')
+    })
+
+    it('allows av1 sources to export as gif via transcoding', () => {
+      setup({
+        fileName: 'input.mkv',
+        probe: { format: 'matroska,webm', videoCodec: 'av1', audioCodec: 'opus' },
+      })
+      const { args, outputName, needsReencode } = buildCommand('gif')
+      expect(needsReencode).toBe(true)
+      expect(outputName).toBe('input_out.gif')
+      expect(args[args.indexOf('-c:v') + 1]).toBe('gif')
+      expect(args).toContain('-an')
     })
 
     it('uses libvpx-vp9 with crf and zero target bitrate', () => {
@@ -544,7 +555,7 @@ describe('buildCommand', () => {
       })
       const { args } = buildCommand('gif')
       expect(args).toContain('-vf')
-      expect(args[args.indexOf('-vf') + 1]).toContain('fps=8')
+      expect(args[args.indexOf('-vf') + 1]).toContain('fps=24')
     })
 
     it('applies main resolution override to gif', () => {
@@ -559,8 +570,6 @@ describe('buildCommand', () => {
       expect(args).toContain('-vf')
       const vf = args[args.indexOf('-vf') + 1]
       expect(vf).toContain('scale=105:59:flags=fast_bilinear:force_original_aspect_ratio=decrease')
-      // Default gif safety scaler should still run after the explicit resolution stage.
-      expect(vf).toContain('scale=min(480\\,iw):-1:flags=fast_bilinear')
     })
 
     it('stretches to exact non-AR resolution when aspect lock is disabled', () => {

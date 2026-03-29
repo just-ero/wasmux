@@ -1,6 +1,6 @@
 /** timeline ribbon for seek and trim. */
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
 import { clampFrame, formatTime, frameToTime } from '@/lib/frameUtils'
 import { snap } from '@/lib/snap'
@@ -22,13 +22,14 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
   const setSelections = useEditorStore((s) => s.setSelections)
   const setInPoint = useEditorStore((s) => s.setInPoint)
   const setOutPoint = useEditorStore((s) => s.setOutPoint)
+  const setSuppressVideoFrameSync = useEditorStore((s) => s.setSuppressVideoFrameSync)
+  const setSeekDragActive = useEditorStore((s) => s.setSeekDragActive)
   const probe = useEditorStore((s) => s.probe)
   const fps = probe?.fps ?? 0
   const duration = probe?.duration ?? 0
 
   const barRef = useRef<HTMLDivElement>(null)
   const [dragTarget, setDragTarget] = useState<DragTarget>(null)
-  const activePointerId = useRef<number | null>(null)
 
   const sel = selections[0]
   const inFrame = sel?.start ?? 0
@@ -37,207 +38,147 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
   const SNAP_PX = 6
   const EDGE_HIT_PX = 10
   const HANDLE_WIDTH_PX = 4
-
-  /** convert pointer x into a frame index, with optional playhead snap. */
-  const xToFrame = useCallback((clientX: number, snapToPlayhead = false) => {
+  const pxToFrame = useCallback((clientX: number): number => {
     const bar = barRef.current
-    if (!bar || totalFrames <= 0) return 0
+    if (!bar) return 0
+    const { totalFrames } = useEditorStore.getState()
+    if (totalFrames <= 0) return 0
     const rect = bar.getBoundingClientRect()
-    const mouseX = clientX - rect.left
-    const ratio = Math.max(0, Math.min(1, mouseX / rect.width))
-    let frame = clampFrame(Math.round(ratio * (totalFrames - 1)), totalFrames)
+    if (rect.width <= 0) return 0
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    return clampFrame(Math.round(ratio * (totalFrames - 1)), totalFrames)
+  }, [])
 
-    if (snapToPlayhead && totalFrames > 1) {
-      const playheadX = (currentFrame / (totalFrames - 1)) * rect.width
-      const snappedX = snap(mouseX, playheadX, SNAP_PX)
-      if (snappedX === playheadX) frame = currentFrame
-    }
+  const snapSeekFrameToAnchors = useCallback((frame: number): number => {
+    const bar = barRef.current
+    if (!bar) return frame
+    const { totalFrames, selections } = useEditorStore.getState()
+    if (totalFrames <= 1) return frame
 
+    const sel = selections[0]
+    const inFrame = sel?.start ?? 0
+    const outFrame = sel?.end ?? Math.max(0, totalFrames - 1)
+    const w = bar.getBoundingClientRect().width
+    if (w <= 0) return frame
+
+    const toX = (f: number) => (f / (totalFrames - 1)) * w
+    const frameX = toX(frame)
+    const inX = toX(inFrame)
+    const outX = toX(outFrame)
+
+    if (snap(frameX, inX, SNAP_PX) === inX) return inFrame
+    if (snap(frameX, outX, SNAP_PX) === outX) return outFrame
     return frame
-  }, [totalFrames, currentFrame])
+  }, [])
 
-  /** seek playhead and softly snap to in/out edges. */
-  const seekTo = useCallback((frame: number) => {
+  const seek = useCallback((frame: number) => {
     const video = videoRef.current
-    if (!video || fps <= 0) return
-    // this gives a sticky feel near trim edges so seeking is less fiddly.
-    const bar = barRef.current
-    if (bar && totalFrames > 1) {
-      const rect = bar.getBoundingClientRect()
-      const frameX = (frame / (totalFrames - 1)) * rect.width
-      const inX = (inFrame / (totalFrames - 1)) * rect.width
-      const outX = (outFrame / (totalFrames - 1)) * rect.width
-      if (Math.abs(frameX - inX) < SNAP_PX) frame = inFrame
-      else if (Math.abs(frameX - outX) < SNAP_PX) frame = outFrame
-    }
-    video.currentTime = frameToTime(frame, fps)
+    if (!video) return
+    const { probe } = useEditorStore.getState()
+    const fps = probe?.fps ?? 0
+    if (fps <= 0) return
+    const maxSecs = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : Number.MAX_SAFE_INTEGER
     useEditorStore.getState().setCurrentFrame(frame)
-  }, [videoRef, fps, totalFrames, inFrame, outFrame])
-
-  /** detect whether pointer is close enough to grab an edge handle. */
-  const detectEdge = useCallback((clientX: number): 'in' | 'out' | null => {
-    const bar = barRef.current
-    if (!bar || totalFrames <= 1) return null
-    const rect = bar.getBoundingClientRect()
-    const inX = (inFrame / (totalFrames - 1)) * rect.width + rect.left
-    const outX = (outFrame / (totalFrames - 1)) * rect.width + rect.left
-    if (Math.abs(clientX - inX) < EDGE_HIT_PX) return 'in'
-    if (Math.abs(clientX - outX) < EDGE_HIT_PX) return 'out'
-    return null
-  }, [totalFrames, inFrame, outFrame])
+    video.currentTime = Math.max(0, Math.min(frame / fps, maxSecs))
+  }, [videoRef])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.pointerType === 'touch') return
     e.preventDefault()
     const bar = barRef.current
     if (!bar) return
-    activePointerId.current = e.pointerId
-    bar.setPointerCapture(e.pointerId)
+    e.currentTarget.setPointerCapture(e.pointerId)
 
-    const edge = detectEdge(e.clientX)
-    if (edge) {
-      setDragTarget(edge)
+    const { selections, totalFrames } = useEditorStore.getState()
+    const sel = selections[0]
+    const inFrame = sel?.start ?? 0
+    const outFrame = sel?.end ?? Math.max(0, totalFrames - 1)
+
+    const rect = bar.getBoundingClientRect()
+    const toX = (f: number) => (f / Math.max(1, totalFrames - 1)) * rect.width + rect.left
+    if (Math.abs(e.clientX - toX(inFrame)) < EDGE_HIT_PX) {
+      setDragTarget('in')
+    } else if (Math.abs(e.clientX - toX(outFrame)) < EDGE_HIT_PX) {
+      setDragTarget('out')
     } else {
+      setSuppressVideoFrameSync(true)
+      setSeekDragActive(true)
       setDragTarget('seek')
       const video = videoRef.current
       if (video && !video.paused) video.pause()
-      seekTo(xToFrame(e.clientX))
+      seek(snapSeekFrameToAnchors(pxToFrame(e.clientX)))
     }
-  }, [detectEdge, seekTo, xToFrame, videoRef])
+  }, [seek, pxToFrame, videoRef, setSuppressVideoFrameSync, setSeekDragActive, snapSeekFrameToAnchors])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return
-    if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return
-    if (!dragTarget) return
+    if (e.pointerType === 'touch' || !dragTarget) return
     if (dragTarget === 'seek') {
-      seekTo(xToFrame(e.clientX))
-    } else if (dragTarget === 'in') {
-      const frame = xToFrame(e.clientX, true)
-      const newStart = Math.min(frame, outFrame)
-      setSelections([{ id: 'full', start: newStart, end: outFrame }])
-    } else if (dragTarget === 'out') {
-      const frame = xToFrame(e.clientX, true)
-      const newEnd = Math.max(frame, inFrame)
-      setSelections([{ id: 'full', start: inFrame, end: newEnd }])
+      seek(snapSeekFrameToAnchors(pxToFrame(e.clientX)))
+      return
     }
-  }, [dragTarget, seekTo, xToFrame, inFrame, outFrame, setSelections])
+    // dragging in/out handle: snap to playhead
+    const frame = pxToFrame(e.clientX)
+    const bar = barRef.current
+    let snapped = frame
+    if (bar) {
+      const { totalFrames, currentFrame, selections } = useEditorStore.getState()
+      const sel = selections[0]
+      const inFrame = sel?.start ?? 0
+      const outFrame = sel?.end ?? Math.max(0, totalFrames - 1)
+      if (totalFrames > 1) {
+        const w = bar.getBoundingClientRect().width
+        const fX = (frame / (totalFrames - 1)) * w
+        const phX = (currentFrame / (totalFrames - 1)) * w
+        if (snap(fX, phX, SNAP_PX) === phX) snapped = currentFrame
+      }
+      if (dragTarget === 'in') {
+        setSelections([{ id: 'full', start: Math.min(snapped, outFrame), end: outFrame }])
+      } else {
+        setSelections([{ id: 'full', start: inFrame, end: Math.max(snapped, inFrame) }])
+      }
+    }
+  }, [dragTarget, seek, pxToFrame, setSelections, snapSeekFrameToAnchors])
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (e.pointerType === 'touch') return
-    if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return
-    activePointerId.current = null
-    setDragTarget(null)
-  }, [])
-
-  const onPointerCancel = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return
-    if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return
-    activePointerId.current = null
-    setDragTarget(null)
-  }, [])
-
-  const applyDrag = useCallback((clientX: number) => {
-    if (!dragTarget) return
     if (dragTarget === 'seek') {
-      seekTo(xToFrame(clientX))
-    } else if (dragTarget === 'in') {
-      const frame = xToFrame(clientX, true)
-      const newStart = Math.min(frame, outFrame)
-      setSelections([{ id: 'full', start: newStart, end: outFrame }])
-    } else if (dragTarget === 'out') {
-      const frame = xToFrame(clientX, true)
-      const newEnd = Math.max(frame, inFrame)
-      setSelections([{ id: 'full', start: inFrame, end: newEnd }])
+      // mark drag as ended but keep suppressVideoFrameSync true so onSeeked
+      // in TransportBar can absorb the first post-drag seeked event before clearing it.
+      setSeekDragActive(false)
     }
-  }, [dragTarget, inFrame, outFrame, seekTo, setSelections, xToFrame])
+    setDragTarget(null)
+  }, [dragTarget, setSeekDragActive])
 
-  useEffect(() => {
-    if (!dragTarget) return
-
-    const onWindowPointerMove = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') return
-      if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return
-      applyDrag(e.clientX)
-    }
-
-    const onWindowPointerUp = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') return
-      if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return
-      activePointerId.current = null
-      setDragTarget(null)
-    }
-
-    window.addEventListener('pointermove', onWindowPointerMove)
-    window.addEventListener('pointerup', onWindowPointerUp)
-    window.addEventListener('pointercancel', onWindowPointerUp)
-
-    return () => {
-      window.removeEventListener('pointermove', onWindowPointerMove)
-      window.removeEventListener('pointerup', onWindowPointerUp)
-      window.removeEventListener('pointercancel', onWindowPointerUp)
-    }
-  }, [applyDrag, dragTarget])
-
-  const onTimelineKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const { totalFrames, currentFrame } = useEditorStore.getState()
     if (totalFrames <= 0) return
-
-    const maxFrame = Math.max(0, totalFrames - 1)
-    const step = 1
-    const bigStep = Math.max(1, Math.round(maxFrame * 0.1))
-    let nextFrame = currentFrame
+    const max = Math.max(0, totalFrames - 1)
+    const big = Math.max(1, Math.round(max * 0.1))
+    let next = currentFrame
     let handled = true
-
     switch (e.key) {
-      case 'ArrowLeft':
-        nextFrame = clampFrame(currentFrame - step, totalFrames)
-        break
-      case 'ArrowRight':
-        nextFrame = clampFrame(currentFrame + step, totalFrames)
-        break
-      case 'PageDown':
-        nextFrame = clampFrame(currentFrame - bigStep, totalFrames)
-        break
-      case 'PageUp':
-        nextFrame = clampFrame(currentFrame + bigStep, totalFrames)
-        break
-      case 'Home':
-        nextFrame = 0
-        break
-      case 'End':
-        nextFrame = maxFrame
-        break
-      default:
-        handled = false
+      case 'ArrowLeft':  next = clampFrame(currentFrame - 1, totalFrames); break
+      case 'ArrowRight': next = clampFrame(currentFrame + 1, totalFrames); break
+      case 'PageDown':   next = clampFrame(currentFrame - big, totalFrames); break
+      case 'PageUp':     next = clampFrame(currentFrame + big, totalFrames); break
+      case 'Home':       next = 0; break
+      case 'End':        next = max; break
+      default:           handled = false
     }
-
     if (!handled) return
     e.preventDefault()
-    seekTo(nextFrame)
-  }, [currentFrame, seekTo, totalFrames])
-
-  /** set in point at current playhead frame. */
-  const setIn = useCallback(() => {
-    setInPoint(currentFrame)
-  }, [currentFrame, setInPoint])
-
-  /** set out point at current playhead frame. */
-  const setOut = useCallback(() => {
-    setOutPoint(currentFrame)
-  }, [currentFrame, setOutPoint])
+    seek(next)
+  }, [seek])
 
   if (totalFrames <= 0) return null
 
   const playheadPct = (currentFrame / (totalFrames - 1)) * 100
-  const inPct = (inFrame / (totalFrames - 1)) * 100
-  const outPct = (outFrame / (totalFrames - 1)) * 100
-  const collapsedSelection = inFrame === outFrame
-  const keyframePcts = keyframes.map((kf) => (kf / (totalFrames - 1)) * 100)
-
+  const inPct     = (inFrame  / (totalFrames - 1)) * 100
+  const outPct    = (outFrame / (totalFrames - 1)) * 100
   return (
     <div className="control-row flex items-center bg-bg-raised border-t border-border shrink-0">
-      {/* in button */}
       <button
-        onClick={setIn}
+        onClick={() => setInPoint(currentFrame)}
         className="btn shrink-0"
         data-pressed={pressedKey === '[' || undefined}
         aria-label="Set in point ([)"
@@ -246,16 +187,13 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
         [
       </button>
 
-      {/* timeline bar */}
       <div
         className="relative h-7 flex-1 min-w-0 select-none overflow-visible"
-        style={{
-          cursor: dragTarget === 'in' || dragTarget === 'out' ? 'ew-resize' : 'default',
-        }}
+        style={{ cursor: dragTarget === 'in' || dragTarget === 'out' ? 'ew-resize' : 'default' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
+        onPointerCancel={onPointerUp}
         role="slider"
         tabIndex={0}
         aria-label="Timeline"
@@ -263,22 +201,21 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
         aria-valuemax={totalFrames - 1}
         aria-valuenow={currentFrame}
         aria-valuetext={showFrames ? `${currentFrame}` : formatTime(fps > 0 ? frameToTime(currentFrame, fps) : 0, duration)}
-        onKeyDown={onTimelineKeyDown}
+        onKeyDown={onKeyDown}
       >
         <TrimRibbonVisual
           inPct={inPct}
           outPct={outPct}
-          collapsedSelection={collapsedSelection}
+          collapsedSelection={inFrame === outFrame}
           playheadPct={playheadPct}
-          keyframePcts={keyframePcts}
+          keyframePcts={keyframes.map((kf) => (kf / (totalFrames - 1)) * 100)}
           handleWidthPx={HANDLE_WIDTH_PX}
           barRef={barRef}
         />
       </div>
 
-      {/* out button */}
       <button
-        onClick={setOut}
+        onClick={() => setOutPoint(currentFrame)}
         className="btn shrink-0"
         data-pressed={pressedKey === ']' || undefined}
         aria-label="Set out point (])"
@@ -286,6 +223,7 @@ export const Timeline = memo(function Timeline({ videoRef, pressedKey }: Props) 
       >
         ]
       </button>
+
     </div>
   )
 })

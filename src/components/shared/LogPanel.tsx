@@ -98,7 +98,7 @@ function statusGlyph(status: LogEntry['status']) {
 function serializeLogEntry(entry: LogEntry, depth: number): string[] {
   const indent = '  '.repeat(depth)
   const lines: string[] = []
-  const progressText = entry.status === 'running' && entry.progress > 0 ? ` ${Math.round(entry.progress)}%` : ''
+  const progressText = entry.status === 'running' && entry.progress != null && entry.progress > 0 ? ` ${Math.round(entry.progress)}%` : ''
   lines.push(`${indent}${statusGlyph(entry.status)} ${entry.label}${progressText}`)
 
   if (entry.detail) {
@@ -146,7 +146,7 @@ function findActiveLogSummary(entries: LogEntry[]): ActiveLogSummary | null {
     if (entry.status !== 'running') return null
 
     const runningPath = nextPath.filter((item) => item.status === 'running')
-    const progress = runningPath.reduce((max, item) => Math.max(max, item.progress), 0)
+    const progress = runningPath.reduce((max, item) => Math.max(max, item.progress ?? 0), 0)
     return {
       labels: runningPath.map((item) => item.label),
       progress,
@@ -284,7 +284,7 @@ function LogNode({
         onMouseLeave={() => setHoveredId((current) => (current === entry.id ? null : current))}
         className={`flex items-center gap-2 py-0.5 rounded transition-colors ${isSyntheticOutputNode ? 'text-text-muted/90' : ''} ${isHighlighted ? 'bg-bg-sunken/80' : isSyntheticOutputNode ? 'hover:bg-bg-sunken/60' : 'hover:bg-bg-sunken/70'}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
-        aria-label={`${entry.status} ${entry.label}${entry.status === 'running' && entry.progress > 0 ? ` ${Math.round(entry.progress)} percent` : ''}`}
+        aria-label={`${entry.status} ${entry.label}${entry.status === 'running' && entry.progress != null && entry.progress > 0 ? ` ${Math.round(entry.progress)} percent` : ''}`}
       >
         {expandable ? (
           <span
@@ -305,7 +305,7 @@ function LogNode({
           <span className={isSyntheticOutputNode ? 'italic' : ''}>{entry.label}</span>
         </span>
 
-        {entry.status === 'running' && entry.progress > 0 && (
+        {entry.status === 'running' && entry.progress != null && entry.progress > 0 && (
           <span className="text-text-muted shrink-0">
             {Math.round(entry.progress)}%
           </span>
@@ -394,7 +394,7 @@ export function LogPanel() {
   )
   const highlightedIds = useMemo(() => findHighlightedIds(entries, hoveredId), [entries, hoveredId])
   const activeSummaryLabel = activeSummary ? activeSummary.labels.join(' > ') : ''
-  const activeSummaryProgressText = activeSummary && activeSummary.progress > 0 ? `${Math.round(activeSummary.progress)}%` : ''
+  const activeSummaryProgressText = activeSummary && activeSummary.progress != null && activeSummary.progress > 0 ? `${Math.round(activeSummary.progress)}%` : ''
   const logTabText = activeSummary ? `${activeSummaryLabel}${activeSummaryProgressText ? ` ${activeSummaryProgressText}` : ''}` : 'log'
   const panelMaxHeight = Math.max(LOG_MIN_HEIGHT + 1, Math.floor(viewportHeight * 0.6))
   const selectedTabStyle = {
@@ -422,6 +422,13 @@ export function LogPanel() {
   const openPanel = useCallback(() => {
     setPanelHeight(clampPanelHeight(Math.max(DEFAULT_PANEL_HEIGHT, LOG_MIN_HEIGHT + 1)))
   }, [clampPanelHeight, setPanelHeight])
+
+  // Auto-open panel when activeTab is set to video/audio (e.g., from file load)
+  useEffect(() => {
+    if (activeTab !== 'console' && isClosed) {
+      openPanel()
+    }
+  }, [activeTab, isClosed, openPanel])
 
   const onTabClick = useCallback((tab: 'video' | 'audio' | 'console') => {
     if (tab === 'console' && !hasInitializedConsoleView.current) {

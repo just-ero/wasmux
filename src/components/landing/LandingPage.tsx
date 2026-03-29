@@ -47,8 +47,8 @@ export function LandingPage({ theme, onToggleTheme, onBrowse, error }: LandingPa
               setInfoOpen(true)
             }}
             className="btn shrink-0"
-            aria-label="Info panel"
-            title="Info panel"
+            aria-label="info panel"
+            title="info panel"
           >
             <Icons.UiInfo />
           </button>
@@ -89,16 +89,21 @@ export function LandingPage({ theme, onToggleTheme, onBrowse, error }: LandingPa
                 browse
               </span>{' '}
               a file{' '}
-              <span className="text-text-muted">(max. 2 gb)</span>
+              <span className="text-text-muted inline-flex items-center gap-1">
+                (max. 2 gb)
+                <span
+                  className="inline-flex shrink-0 align-super text-[10px] leading-none"
+                  title="All processing happens locally in your browser. No data is ever uploaded to any server."
+                  aria-label="Local processing info"
+                >
+                  <Icons.UiInfo width={14} height={14} />
+                </span>
+              </span>
             </p>
 
             <div className="flex flex-col items-center text-center text-[12px] text-text-muted select-text cursor-text" style={{ gap: 'calc(var(--wasmux-edge-space) / 2)' }}>
               <div>{VIDEO_FORMATS.map((format) => `.${format}`).join(' ')}</div>
               <div>{AUDIO_FORMATS.map((format) => `.${format}`).join(' ')}</div>
-              <div className="flex items-center justify-center gap-1 mt-2 text-text-muted">
-                <Icons.UiInfo width={12} height={12} />
-                <span className="text-[11px]">all processing happens locally in your browser. no data is ever uploaded to any server.</span>
-              </div>
             </div>
 
             {error && (

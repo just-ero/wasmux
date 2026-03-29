@@ -25,31 +25,12 @@ export function startFFmpegLoad(): Promise<void> {
     if (log.entries.some((e) => e.id === ENGINE_ID)) return
 
     useFFmpegStore.getState().setStatus('loading')
-    let initProgress = 0
-    let initTicker: ReturnType<typeof setInterval> | null = null
-
-    const stopInitTicker = () => {
-      if (!initTicker) return
-      clearInterval(initTicker)
-      initTicker = null
-    }
-
-    const startInitTicker = () => {
-      stopInitTicker()
-      initProgress = 8
-      initTicker = setInterval(() => {
-        initProgress = Math.min(96, initProgress + 2)
-        const s = useLogStore.getState()
-        s.updateEntry(INIT_ID, { progress: initProgress })
-        s.updateEntry(ENGINE_ID, { progress: Math.max(20, initProgress) })
-      }, 250)
-    }
 
     log.addEntry({
       id: ENGINE_ID,
       label: 'ffmpeg engine loading',
       status: 'running',
-      progress: 0,
+      progress: null,
       children: [],
     })
 
@@ -59,47 +40,36 @@ export function startFFmpegLoad(): Promise<void> {
           id: DL_ID,
           label: 'downloading core',
           status: 'running',
-          progress: 0,
+          progress: null,
           children: [],
         })
-        useLogStore.getState().updateEntry(ENGINE_ID, { progress: 12 })
       },
       onInitializing() {
-        useLogStore.getState().updateEntry(DL_ID, { status: 'done', progress: 100 })
-        useLogStore.getState().addChild(ENGINE_ID, {
+        const s = useLogStore.getState()
+        // mark download done if it was shown
+        if (s.entries.some((e) => e.id === DL_ID) || s.entries.some((e) => e.children.some((c) => c.id === DL_ID))) {
+          s.updateEntry(DL_ID, { status: 'done', progress: 100 })
+        }
+        s.addChild(ENGINE_ID, {
           id: INIT_ID,
           label: 'initializing wasm',
           status: 'running',
-          progress: 0,
+          progress: null,
           children: [],
         })
-        useLogStore.getState().updateEntry(ENGINE_ID, { progress: 20 })
-        startInitTicker()
       },
     })
       .then(() => {
-        stopInitTicker()
         const s = useLogStore.getState()
         s.updateEntry(INIT_ID, { status: 'done', progress: 100 })
-        s.updateEntry(ENGINE_ID, {
-          status: 'done',
-          progress: 100,
-        })
+        s.updateEntry(ENGINE_ID, { status: 'done', progress: 100 })
         useFFmpegStore.getState().setStatus('ready')
       })
       .catch((err) => {
-        stopInitTicker()
         const msg = err instanceof Error ? err.message : String(err)
         const s = useLogStore.getState()
-        s.updateEntry(INIT_ID, {
-          status: 'error',
-          detail: msg,
-        })
-        s.updateEntry(ENGINE_ID, {
-          status: 'error',
-          detail: msg,
-          label: 'ffmpeg engine failed',
-        })
+        s.updateEntry(INIT_ID, { status: 'error', detail: msg })
+        s.updateEntry(ENGINE_ID, { status: 'error', detail: msg, label: 'ffmpeg engine failed' })
         useFFmpegStore.getState().setStatus('error')
         _started = false
       })

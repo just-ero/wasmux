@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWebmFallbackArgs, isWasmMemoryFault, parseProgressSeconds, shouldDisplayEncodeLogLine } from '@/lib/exportFile'
+import { buildWebmFallbackArgs, isLikelyWasmDecodeFault, isWasmMemoryFault, parseProgressSeconds, shouldDisplayEncodeLogLine } from '@/lib/exportFile'
 
 describe('parseProgressSeconds', () => {
   it('parses ffmpeg time= output with microsecond precision', () => {
@@ -97,5 +97,17 @@ describe('isWasmMemoryFault', () => {
 
   it('ignores unrelated errors', () => {
     expect(isWasmMemoryFault(new Error('Conversion failed'))).toBe(false)
+  })
+})
+
+describe('isLikelyWasmDecodeFault', () => {
+  it('detects known wasm decode capability failures', () => {
+    expect(isLikelyWasmDecodeFault(new Error('[av1 @ 0xdef780] Failed to get pixel format.'))).toBe(true)
+    expect(isLikelyWasmDecodeFault('Error while decoding stream #0:0: Function not implemented')).toBe(true)
+    expect(isLikelyWasmDecodeFault('Conversion failed!')).toBe(true)
+  })
+
+  it('ignores unrelated errors', () => {
+    expect(isLikelyWasmDecodeFault(new Error('Permission denied while saving file'))).toBe(false)
   })
 })

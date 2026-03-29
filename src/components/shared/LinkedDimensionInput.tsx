@@ -149,6 +149,7 @@ export function LinkedDimensionInput({
     commit: (raw: string) => void,
   ) => {
     if (document.activeElement !== e.currentTarget) return
+    e.preventDefault()
     e.stopPropagation()
     const base = (current != null && current > 0) ? current : parseInt(placeholder ?? '0', 10) || 0
     const up = e.deltaY < 0

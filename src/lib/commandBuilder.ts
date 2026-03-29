@@ -111,14 +111,14 @@ function getContainerCodecProfile(ext: string): ContainerCodecProfile | null {
   return null
 }
 
-function isVideoStreamCopyCompatibleWithContainer(ext: string, sourceVideoCodec: string, hasVideoTrack: boolean): boolean {
+export function isVideoStreamCopyCompatibleWithContainer(ext: string, sourceVideoCodec: string, hasVideoTrack: boolean): boolean {
   if (!hasVideoTrack) return true
   const profile = getContainerCodecProfile(ext)
   if (!profile) return true
   return profile.sourceVideoStreamCopyCodecs.has(normalizeCodecName(sourceVideoCodec))
 }
 
-function isAudioStreamCopyCompatibleWithContainer(ext: string, sourceAudioCodec: string, hasAudioTrack: boolean): boolean {
+export function isAudioStreamCopyCompatibleWithContainer(ext: string, sourceAudioCodec: string, hasAudioTrack: boolean): boolean {
   if (!hasAudioTrack) return true
   const profile = getContainerCodecProfile(ext)
   if (!profile) return true
@@ -169,6 +169,7 @@ export function buildCommand(format: OutputFormat): BuildResult {
 
   const ext = resolveOutputExtension(format, probe.format, inputName)
   const isGifOutput = ext === 'gif'
+
   const baseName = inputName.replace(/\.[^.]+$/, '')
   const outputName = `${baseName}_out.${ext}`
   const hasAudioTrack = !isGifOutput && audioProps.trackIndex !== null
@@ -310,13 +311,10 @@ export function buildCommand(format: OutputFormat): BuildResult {
   }
 
   if (isGifOutput) {
-    // browser/wasm gif encoding is expensive at source resolution and fps.
-    // apply sane defaults unless user explicitly set output fps.
-    const requestedGifFps = videoProps.fps && videoProps.fps > 0 ? Math.round(videoProps.fps) : 8
-    const gifFps = fps > 0 ? Math.min(requestedGifFps, fps) : requestedGifFps
+    // highest quality gif defaults: preserve source fps unless user overrides.
+    const requestedGifFps = videoProps.fps && videoProps.fps > 0 ? Math.round(videoProps.fps) : Math.max(1, Math.round(fps || 15))
+    const gifFps = fps > 0 ? Math.min(requestedGifFps, Math.max(1, Math.round(fps))) : requestedGifFps
     vFilters.push(`fps=${gifFps}`)
-    // keep gif generation fast: cap width and never upscale smaller crops.
-    vFilters.push('scale=min(480\\,iw):-1:flags=fast_bilinear')
   }
 
   if (!isGifOutput && audioProps.trackIndex !== null) {

@@ -37,6 +37,7 @@ export function EditorView({ onClose, theme, onToggleTheme }: Props) {
   const resolutionWidth = useEditorStore((s) => s.videoProps.width)
   const resolutionHeight = useEditorStore((s) => s.videoProps.height)
   const keepAspectRatio = useEditorStore((s) => s.videoProps.keepAspectRatio)
+  const ingestionStatus = useEditorStore((s) => s.ingestionStatus)
 
   const onPreviewWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (!previewUrl || videoTrackIndex === null || !probe) return
@@ -168,10 +169,12 @@ export function EditorView({ onClose, theme, onToggleTheme }: Props) {
       </div>
 
       {/* bottom controls - the panel overlays these when opened */}
-      <div className="shrink-0 relative">
-        <TransportBar videoRef={videoRef} pressedKey={pressedKey} setPressedKey={setPressedKey} />
-        <Timeline videoRef={videoRef} pressedKey={pressedKey} />
-      </div>
+      {ingestionStatus === 'ready' && (
+        <div className="shrink-0 relative">
+          <TransportBar videoRef={videoRef} pressedKey={pressedKey} setPressedKey={setPressedKey} />
+          <Timeline videoRef={videoRef} pressedKey={pressedKey} />
+        </div>
+      )}
 
       {/* keyboard help modal */}
       <KeyboardHelp isOpen={helpOpen} onClose={() => setHelpOpen(false)} />

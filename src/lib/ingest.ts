@@ -1,7 +1,8 @@
 /** file ingest pipeline from ui input to ready preview. */
 
 import { fetchFile } from '@ffmpeg/util'
-import { getFFmpeg, resetFFmpeg } from '@/lib/ffmpeg'
+import type { ProgressEvent } from '@ffmpeg/ffmpeg'
+import { getFFmpeg, cancelExec, setExecRunning } from '@/lib/ffmpeg'
 import { probeFile } from '@/lib/probe'
 import { useEditorStore } from '@/stores/editorStore'
 import { useLogStore } from '@/stores/logStore'
@@ -20,21 +21,12 @@ function formatGiB(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
 }
 
-function getMissingBitrateDetail(kind: 'video' | 'audio', containerBitrate: number): string {
-  if (containerBitrate > 0) {
-    return `FFmpeg did not report a per-stream ${kind} bitrate. The file only exposed container bitrate (${containerBitrate} kb/s), which is total bitrate for the whole file.`
-  }
-
-  return `FFmpeg did not report ${kind} stream bitrate. This is common with variable-bitrate media or formats that omit per-stream bitrate metadata.`
-}
-
 function normalizeCodecName(codec: string): string {
   return codec.trim().toLowerCase()
 }
 
 function canLikelyPlayNativeAudioCodec(codec: string): boolean {
   const normalized = normalizeCodecName(codec)
-  // Conservative allow-list for browser-decoded audio codecs.
   return normalized === 'aac'
     || normalized === 'mp3'
     || normalized === 'opus'
@@ -43,6 +35,7 @@ function canLikelyPlayNativeAudioCodec(codec: string): boolean {
     || normalized === 'alac'
     || normalized.startsWith('pcm_')
 }
+
 
 export function validateProbeForIngest(probe: ProbeResult): string | null {
   const hasVideo = probe.videoTracks.length > 0
@@ -72,7 +65,7 @@ export function isIngestionActive(status: IngestionStatus): boolean {
 
 export function cancelIngest(): void {
   currentIngestId += 1
-  resetFFmpeg()
+  cancelExec()
   useLogStore.getState().removeEntry(INGEST_ID)
   const store = useEditorStore.getState()
   if (isIngestionActive(store.ingestionStatus)) {
@@ -87,7 +80,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
 
   // if an older ingest is still running, stop it first.
   const myId = ++currentIngestId
-  resetFFmpeg()
+  cancelExec()
   log.removeEntry(INGEST_ID)
 
   let ingestProgress = 5
@@ -201,7 +194,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
           status: 'done',
           progress: 100,
           label: 'fetching video bitrate (unavailable)',
-          detail: getMissingBitrateDetail('video', probe.containerBitrate),
+          detail: undefined,
         })
       } else {
         log.updateEntry(PROBE_VIDEO_BITRATE_ID, {
@@ -224,7 +217,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
           status: 'done',
           progress: 100,
           label: 'fetching audio bitrate (unavailable)',
-          detail: getMissingBitrateDetail('audio', probe.containerBitrate),
+          detail: undefined,
         })
       } else {
         log.updateEntry(PROBE_AUDIO_BITRATE_ID, {
@@ -263,7 +256,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       progress: 0,
       children: [],
     })
-    startStageTicker(94, 1, 450)
+    startStageTicker(98, 1, 450)
 
     if (probe.videoTracks.length === 0) {
       store.setPreviewUrl(null)
@@ -271,37 +264,60 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
       log.updateEntry(PREVIEW_ID, {
         status: 'done',
         progress: 100,
-        label: 'preparing preview (audio-only)',
-        detail: 'No video track found; preview is audio-only.',
+        label: 'preparing preview',
       })
     } else {
-      // try native playback first. if the browser rejects it, we fall back
-      // to an mp4 preview transcode so the editor still works.
-      const canPlayNative = await canBrowserPlay(objectUrl)
       const hasAudioTrack = probe.audioTracks.length > 0
-      const hasLikelyUnsupportedAudioCodec = hasAudioTrack && !canLikelyPlayNativeAudioCodec(probe.audioCodec)
+      const needsAudioCompatPreview = hasAudioTrack && !canLikelyPlayNativeAudioCodec(probe.audioCodec)
 
-      const shouldForceTranscodedPreviewForAudio = canPlayNative && hasLikelyUnsupportedAudioCodec
-
-      if (canPlayNative && !shouldForceTranscodedPreviewForAudio) {
+      if (!needsAudioCompatPreview) {
+        // Use source file directly for fastest startup.
         store.setPreviewUrl(objectUrl)
         setIngestProgress(95)
         log.updateEntry(PREVIEW_ID, {
           status: 'done',
           progress: 100,
-          label: 'preparing preview (native)',
-          detail: hasLikelyUnsupportedAudioCodec
-            ? `Source audio codec (${probe.audioCodec || 'unknown'}) may not decode in this browser; playback can be silent. Export path is unaffected.`
-            : undefined,
+          label: 'preparing preview',
         })
       } else {
-        // transcode audio to aac for browser preview, stream-copy video for speed
-        // limit to first 5 seconds to avoid long encode times
-        const previewName = '_preview.mp4'
+        // Browser likely won't decode source audio codec in preview; keep video stream copy
+        // and transcode only audio so the preview has sound.
+        const previewName = '_preview_audio_compat.mp4'
+        stopStageTicker()
+        let sawProgress = false
+        let lastProgressAt = Date.now()
+        const waitingTicker = setInterval(() => {
+          if (myId !== currentIngestId) return
+          if (sawProgress) return
+          const elapsedSeconds = Math.max(0, Math.floor((Date.now() - lastProgressAt) / 1000))
+          log.updateEntry(PREVIEW_ID, {
+            label: `preparing preview (${elapsedSeconds}s)`,
+          })
+          // Keep ingest progress moving slowly while waiting for first ffmpeg progress sample.
+          setIngestProgress(Math.min(99, 95 + Math.floor(elapsedSeconds / 3)))
+        }, 1000)
+        const onPreviewProgress = ({ progress }: ProgressEvent) => {
+          if (!Number.isFinite(progress)) return
+          sawProgress = true
+          lastProgressAt = Date.now()
+          const clamped = Math.min(1, Math.max(0, progress))
+          log.updateEntry(PREVIEW_ID, {
+            progress: Math.round(clamped * 100),
+            label: 'preparing preview',
+          })
+          const overall = Math.round(80 + clamped * 19)
+          setIngestProgress(overall)
+        }
+        ffmpeg.on('progress', onPreviewProgress)
         try {
+          const videoTrackIndex = probe.videoTracks[0]?.index ?? 0
+          const audioTrackIndex = probe.audioTracks[0]?.index ?? 0
+          setExecRunning(true)
           await ffmpeg.exec([
+            '-progress', 'pipe:1',
             '-i', filename,
-            '-t', '5',
+            '-map', `0:${videoTrackIndex}`,
+            '-map', `0:${audioTrackIndex}`,
             '-c:v', 'copy',
             '-c:a', 'aac',
             '-movflags', '+faststart',
@@ -316,17 +332,21 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
           log.updateEntry(PREVIEW_ID, {
             status: 'done',
             progress: 100,
-            label: shouldForceTranscodedPreviewForAudio
-              ? 'preparing preview (transcoded for audio compatibility)'
-              : 'preparing preview (transcoded)',
-            detail: shouldForceTranscodedPreviewForAudio
-              ? `Source audio codec (${probe.audioCodec || 'unknown'}) is likely unsupported for native playback; preview audio was transcoded to AAC.`
-              : undefined,
+            label: 'preparing preview',
           })
-        } catch (previewErr) {
-          const previewMsg = previewErr instanceof Error ? previewErr.message : String(previewErr)
-          throw new Error(`Preview transcode failed: ${previewMsg}`)
+        } catch {
+          // Fall back to source preview if compatibility transcode fails.
+          store.setPreviewUrl(objectUrl)
+          setIngestProgress(95)
+          log.updateEntry(PREVIEW_ID, {
+            status: 'done',
+            progress: 100,
+            label: 'preparing preview',
+          })
         } finally {
+          setExecRunning(false)
+          clearInterval(waitingTicker)
+          ffmpeg.off('progress', onPreviewProgress)
           await ffmpeg.deleteFile(previewName).catch(() => {})
         }
       }
@@ -337,6 +357,7 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
     // done
     stopStageTicker()
     store.setIngestionStatus('ready')
+    store.setActiveTab('video')
     log.updateEntry(INGEST_ID, {
       status: 'done',
       progress: 100,
@@ -357,29 +378,3 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
   }
 }
 
-/** test whether a blob url is natively playable. */
-async function canBrowserPlay(url: string): Promise<boolean> {
-  return await new Promise((resolve) => {
-    const video = document.createElement('video')
-    video.preload = 'auto'
-
-    let settled = false
-    const settle = (result: boolean) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      video.oncanplay = null
-      video.onerror = null
-      video.removeAttribute('src')
-      video.load()
-      resolve(result)
-    }
-
-    const timer = setTimeout(() => settle(false), 3000)
-
-    video.oncanplay = () => settle(true)
-    video.onerror = () => settle(false)
-
-    video.src = url
-  })
-}

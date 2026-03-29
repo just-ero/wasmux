@@ -18,7 +18,6 @@ export const ExportControls = memo(function ExportControls() {
   const isExporting = useEditorStore((s) => s.isExporting)
 
   const [formatMenuOpen, setFormatMenuOpen] = useState(false)
-
   const exportBtnRef = useRef<HTMLButtonElement>(null)
   const formatMenuId = 'export-format-menu'
 
@@ -79,15 +78,7 @@ export const ExportControls = memo(function ExportControls() {
     return items
   }, [file, probe?.format])
 
-  const onExportClick = useCallback(() => {
-    const state = useEditorStore.getState()
-    if (!state.file || !state.probe || state.isExporting) return
-    setFormatMenuOpen((open) => !open)
-  }, [])
-
-  const onFormatSelect = useCallback(async (format: OutputFormat) => {
-    setFormatMenuOpen(false)
-
+  const runExport = useCallback(async (format: OutputFormat) => {
     const state = useEditorStore.getState()
     if (!state.file || !state.probe) return
 
@@ -101,6 +92,17 @@ export const ExportControls = memo(function ExportControls() {
 
     await exportFile({ target })
   }, [])
+
+  const onExportClick = useCallback(() => {
+    const state = useEditorStore.getState()
+    if (!state.file || !state.probe || state.isExporting) return
+    setFormatMenuOpen((open) => !open)
+  }, [])
+
+  const onFormatSelect = useCallback((format: OutputFormat) => {
+    setFormatMenuOpen(false)
+    void runExport(format)
+  }, [runExport])
 
   if (!file) return null
 
@@ -128,10 +130,11 @@ export const ExportControls = memo(function ExportControls() {
           options={formatOptions}
           anchorRef={exportBtnRef}
           menuId={formatMenuId}
-          onSelect={(fmt) => { void onFormatSelect(fmt) }}
+          onSelect={(fmt) => { onFormatSelect(fmt) }}
           onClose={() => setFormatMenuOpen(false)}
         />
       )}
+
     </>
   )
 })

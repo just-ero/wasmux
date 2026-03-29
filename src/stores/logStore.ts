@@ -15,8 +15,8 @@ export interface LogEntry {
   id: string
   label: string
   status: LogEntryStatus
-  /** 0-100. only displayed when > 0. */
-  progress: number
+  /** 0-100. null = indeterminate (show spinner, no bar). only displayed when > 0. */
+  progress: number | null
   /** optional detail text (e.g. error messages). */
   detail?: string
   /** raw console output lines captured from command runners. */

@@ -5,6 +5,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useGlobalDrop } from '@/hooks/useGlobalDrop'
 import { isFormElement } from '@/lib/domUtils'
 import { startFFmpegLoad } from '@/hooks/useFFmpeg'
+import { useFFmpeg } from '@/hooks/useFFmpeg'
 import { useEditorStore } from '@/stores/editorStore'
 import { useLogStore } from '@/stores/logStore'
 import { useFFmpegStore } from '@/stores/ffmpegStore'
@@ -21,6 +22,8 @@ import { startMemoryTelemetry } from '@/stores/memoryTelemetryStore'
 import { useRuntimeConfigStore } from '@/stores/runtimeConfigStore'
 
 export function App() {
+  useFFmpeg()
+
   useEffect(() => {
     startMemoryTelemetry()
     void useRuntimeConfigStore.getState().loadRuntimeConfig()

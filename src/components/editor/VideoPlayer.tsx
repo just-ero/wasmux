@@ -190,6 +190,15 @@ export const VideoPlayer = memo(function VideoPlayer({ videoRef }: Props) {
   const showPixelCanvas = showVideo && ((isDownscaled && hasResOverride) || previewFps !== null)
 
   useEffect(() => {
+    if (!showPixelCanvas) return
+    const video = videoRef.current
+    if (!video) return
+    const onSeeked = () => drawPixelated()
+    video.addEventListener('seeked', onSeeked)
+    return () => video.removeEventListener('seeked', onSeeked)
+  }, [showPixelCanvas, videoRef, drawPixelated])
+
+  useEffect(() => {
     if (!showPixelCanvas) {
       offscreenRef.current = null
       return

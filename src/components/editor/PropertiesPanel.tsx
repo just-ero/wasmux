@@ -5,9 +5,9 @@ import { LinkedDimensionInput } from '@/components/shared/LinkedDimensionInput'
 import { SegmentedTimeInput } from '@/components/shared/SegmentedTimeInput'
 import { TrimRibbonVisual } from '@/components/editor/TrimRibbonVisual'
 import { useEditorStore } from '@/stores/editorStore'
-import { clampFrame, formatFrameCompact, formatFramePadded, formatTime, frameToTime, remapFrameIndex, timeToFrame, totalFramesFromDuration } from '@/lib/frameUtils'
+import { clampFrame, formatFrameCompact, formatFramePadded, formatTime, frameToTime, timeToFrame } from '@/lib/frameUtils'
 import { lockFocusedInputWheelScroll } from '@/lib/domUtils'
-import type { AudioCodec, VideoCodec } from '@/types/editor'
+import type { AudioCodec, CropRegion, VideoCodec } from '@/types/editor'
 
 const VIDEO_CODECS: VideoCodec[] = ['copy', 'libx264', 'libvpx-vp9', 'mpeg4', 'libtheora']
 const AUDIO_CODECS: AudioCodec[] = ['copy', 'aac', 'libmp3lame', 'libvorbis', 'libopus', 'flac', 'ac3']
@@ -118,6 +118,12 @@ function PropertiesPanelImpl() {
   const cropHRef = useRef<HTMLInputElement>(null)
   const trimInRef = useRef<HTMLInputElement>(null)
   const trimOutRef = useRef<HTMLInputElement>(null)
+  const previousCropRef = useRef<CropRegion | null>(crop)
+
+  // Track previous crop state to restore on resolution reset
+  useEffect(() => {
+    previousCropRef.current = crop
+  }, [crop])
 
   const fps = probe?.fps ?? 0
   const duration = probe?.duration ?? 0
@@ -125,23 +131,15 @@ function PropertiesPanelImpl() {
   const start = sel?.start ?? 0
   const end = sel?.end ?? Math.max(0, totalFrames - 1)
   const isTrimmed = start > 0 || end < Math.max(0, totalFrames - 1)
-  const displayFps = videoProps.fps && videoProps.fps > 0 ? videoProps.fps : fps
-  const displayTotalFrames = displayFps > 0 && duration > 0
-    ? totalFramesFromDuration(duration, displayFps)
-    : totalFrames
-  const startDisplay = remapFrameIndex(start, fps, displayFps, displayTotalFrames)
-  const endDisplay = remapFrameIndex(end, fps, displayFps, displayTotalFrames)
-  const startDisplayOne = displayTotalFrames > 0 ? startDisplay + 1 : 0
-  const endDisplayOne = displayTotalFrames > 0 ? endDisplay + 1 : 0
   const effectiveCrop = crop ?? { x: 0, y: 0, width: probe?.width ?? 0, height: probe?.height ?? 0 }
   const hasVideoTrackSelected = videoProps.trackIndex !== null
   const hasResolutionOverride = videoProps.width !== null || videoProps.height !== null
-  const inText = showFrames ? formatFrameCompact(startDisplayOne) : formatTime(fps > 0 ? frameToTime(start, fps) : 0, duration)
-  const outText = showFrames ? formatFrameCompact(endDisplayOne) : formatTime(fps > 0 ? frameToTime(end, fps) : 0, duration)
-  const trimInPlaceholder = showFrames ? '1' : formatTime(0, duration)
-  const trimOutPlaceholder = showFrames ? String(Math.max(1, displayTotalFrames)) : formatTime(duration, duration)
-  const trimDisplayInText = showFrames ? formatFramePadded(startDisplayOne, displayTotalFrames) : inText
-  const trimDisplayOutText = showFrames ? formatFramePadded(endDisplayOne, displayTotalFrames) : outText
+  const inText = showFrames ? formatFrameCompact(start) : formatTime(fps > 0 ? frameToTime(start, fps) : 0, duration)
+  const outText = showFrames ? formatFrameCompact(end) : formatTime(fps > 0 ? frameToTime(end, fps) : 0, duration)
+  const trimInPlaceholder = showFrames ? '0' : formatTime(0, duration)
+  const trimOutPlaceholder = showFrames ? String(Math.max(0, totalFrames - 1)) : formatTime(duration, duration)
+  const trimDisplayInText = showFrames ? formatFramePadded(start, totalFrames) : inText
+  const trimDisplayOutText = showFrames ? formatFramePadded(end, totalFrames) : outText
   const trimFieldWidth = `${Math.max(16, Math.max(trimDisplayInText.length, trimDisplayOutText.length) + 4)}ch`
   const trimMockInPct = 0
   const trimMockOutPct = 100
@@ -240,11 +238,7 @@ function PropertiesPanelImpl() {
   const parseTrimValue = useCallback((text: string): number | null => {
     const trimmed = text.trim()
     if (!trimmed) return null
-    if (showFrames && /^\d+$/.test(trimmed)) {
-      const parsed = parseInt(trimmed, 10)
-      const displayFrame = clampFrame(parsed - 1, displayTotalFrames)
-      return remapFrameIndex(displayFrame, displayFps, fps, totalFrames)
-    }
+    if (/^\d+$/.test(trimmed)) return clampFrame(parseInt(trimmed, 10), totalFrames)
     const parts = trimmed.split(':')
     let secs = 0
     if (parts.length === 1) secs = parseFloat(parts[0])
@@ -253,7 +247,7 @@ function PropertiesPanelImpl() {
     else return null
     if (Number.isNaN(secs) || !Number.isFinite(secs) || secs < 0) return null
     return clampFrame(fps > 0 ? timeToFrame(secs, fps) : 0, totalFrames)
-  }, [showFrames, totalFrames, displayTotalFrames, displayFps, fps])
+  }, [fps, totalFrames])
 
   const setCropField = useCallback((field: 'x' | 'y' | 'width' | 'height', raw: string) => {
     const next = parseIntOrNull(raw)
@@ -331,17 +325,13 @@ function PropertiesPanelImpl() {
     const up = e.deltaY < 0
     const delta = up ? 1 : -1
     if (kind === 'in') {
-      const nextDisplayOne = clampFrame(startDisplayOne + delta, displayTotalFrames + 1)
-      const nextDisplay = clampFrame(nextDisplayOne - 1, displayTotalFrames)
-      const nextSource = remapFrameIndex(nextDisplay, displayFps, fps, totalFrames)
-      setInPoint(nextSource)
+      const next = clampFrame(start + delta, totalFrames)
+      setInPoint(next)
     } else {
-      const nextDisplayOne = clampFrame(endDisplayOne + delta, displayTotalFrames + 1)
-      const nextDisplay = clampFrame(nextDisplayOne - 1, displayTotalFrames)
-      const nextSource = remapFrameIndex(nextDisplay, displayFps, fps, totalFrames)
-      setOutPoint(nextSource)
+      const next = clampFrame(end + delta, totalFrames)
+      setOutPoint(next)
     }
-  }, [showFrames, startDisplayOne, endDisplayOne, displayTotalFrames, displayFps, fps, totalFrames, setInPoint, setOutPoint])
+  }, [showFrames, start, end, totalFrames, setInPoint, setOutPoint])
 
   const handleResWidthChange = useCallback((w: number | null, linkedH: number | null) => {
     if (linkedH !== undefined) {
@@ -396,12 +386,12 @@ function PropertiesPanelImpl() {
     setOutPoint(maxFrame)
     if (showFrames) {
       setTrimInValue('1')
-      setTrimOutValue(String(Math.max(1, displayTotalFrames)))
+      setTrimOutValue(String(Math.max(1, totalFrames)))
     } else {
       setTrimInValue(formatTime(0, duration))
       setTrimOutValue(formatTime(duration, duration))
     }
-  }, [totalFrames, setInPoint, setOutPoint, showFrames, displayTotalFrames, duration])
+  }, [totalFrames, setInPoint, setOutPoint, showFrames, duration])
 
   const labelWidth = useMemo(() => {
     const labels = activeTab === 'audio'
@@ -477,32 +467,7 @@ function PropertiesPanelImpl() {
               <SettingResetButton label="Reset trim" onClick={resetTrim} />
             )}
           </PropertyRow>
-          {isTrimmed && (
-            <PropertyRow label="cutting" labelWidth={labelWidth}>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 cursor-pointer text-[12px]">
-                  <input
-                    type="checkbox"
-                    checked={videoProps.preciseFrameCuts}
-                    onChange={(e) => setVideoProps({ preciseFrameCuts: e.target.checked })}
-                    aria-label="Precise frame cuts"
-                    title="Cut at exact frames instead of keyframes (may require re-encoding)"
-                  />
-                  <span>exact frames (re-encode if needed)</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-[12px]">
-                  <input
-                    type="checkbox"
-                    checked={videoProps.fastExport}
-                    onChange={(e) => setVideoProps({ fastExport: e.target.checked })}
-                    aria-label="Fast export"
-                    title="Trade frame precision for speed: uses keyframe snapping + ultrafast encoding"
-                  />
-                  <span>fast export (speed over precision)</span>
-                </label>
-              </div>
-            </PropertyRow>
-          )}
+
 
           <GroupTitle title="output sizing + timing" />
           <PropertyRow label="fps" labelWidth={labelWidth}>
@@ -549,7 +514,13 @@ function PropertiesPanelImpl() {
               </span>
             )}
             {hasResolutionOverride && (
-              <SettingResetButton label="Reset output resolution" onClick={() => setVideoProps({ width: null, height: null })} />
+              <SettingResetButton label="Reset output resolution" onClick={() => {
+                setVideoProps({ width: null, height: null })
+                // Restore crop to what it was before resolution scaling started
+                if (previousCropRef.current !== null) {
+                  setCrop(previousCropRef.current)
+                }
+              }} />
             )}
           </PropertyRow>
 

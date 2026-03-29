@@ -291,6 +291,48 @@ export const SegmentedTimeInput = forwardRef<HTMLInputElement, Props>(function S
       }}
       onPaste={(e) => {
         e.preventDefault()
+        const pasted = e.clipboardData.getData('text')
+        if (!pasted) return
+
+        // Try to parse as full time format (e.g., "5:30", "5:30.123", "00:05:30.123")
+        // or as just digits for the focused segment
+        const segments = pasted.trim().split(/[:.]/).filter(s => s.length > 0)
+        
+        if (segments.length === 1) {
+          // Single value - paste into focused segment as digits
+          const digit = segments[0]
+          if (!/^\d+$/.test(digit)) return
+          typedBufferRef.current = { segment: activeSegment, text: digit }
+          setDraftVersion((v) => v + 1)
+          placeCaretAtSegmentEnd(activeSegment)
+        } else {
+          // Multiple segments - map to h/m/s/ms
+          const newValues = { ...values }
+          const specsKinds = specs.map(s => s.kind)
+          let segmentIndex = 0
+          
+          // Handle leading zeros - if we get ["00", "05", "30"] and we have [h, m, s, ms]
+          // This is likely "00:05:30"
+          for (let i = 0; i < segments.length && segmentIndex < specsKinds.length; i++) {
+            const digit = segments[i]
+            if (!/^\d+$/.test(digit)) continue
+            
+            const parsed = parseInt(digit, 10)
+            const kind = specsKinds[segmentIndex]
+            
+            if (kind === 'h') newValues.h = parsed
+            else if (kind === 'm') newValues.m = parsed
+            else if (kind === 's') newValues.s = parsed
+            else if (kind === 'ms') newValues.ms = parsed
+            
+            segmentIndex++
+          }
+          
+          setValues(newValues)
+          typedBufferRef.current = { segment: -1, text: '' }
+          setDraftVersion((v) => v + 1)
+          selectSegment(Math.min(activeSegment + 1, specs.length - 1))
+        }
       }}
       onDrop={(e) => {
         e.preventDefault()

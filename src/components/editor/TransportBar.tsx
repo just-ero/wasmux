@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
-import { formatTime, formatFramePadded, frameToTime, clampFrame, timeToFrameFloor, remapFrameIndex, snapFrameToFpsGrid, totalFramesFromDuration } from '@/lib/frameUtils'
+import { formatTime, formatFramePadded, frameToTime, clampFrame, timeToFrame } from '@/lib/frameUtils'
 import { isFormElement, tryPlay } from '@/lib/domUtils'
 import { HOTKEYS, matchesHotkey } from '@/lib/hotkeys'
 import * as Icons from '@/components/shared/Icons'
@@ -23,31 +23,12 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
   const setOutPoint = useEditorStore((s) => s.setOutPoint)
   const showFrames = useEditorStore((s) => s.showFrames)
   const setShowFrames = useEditorStore((s) => s.setShowFrames)
-  const outputFpsOverride = useEditorStore((s) => s.videoProps.fps)
   const fps = probe?.fps ?? 0
-  const displayFps = outputFpsOverride && outputFpsOverride > 0 ? outputFpsOverride : fps
   const duration = probe?.duration ?? 0
-  const displayTotalFrames = displayFps > 0 && duration > 0
-    ? totalFramesFromDuration(duration, displayFps)
-    : totalFrames
-  const currentFrameDisplay = remapFrameIndex(currentFrame, fps, displayFps, displayTotalFrames)
 
   const [playing, setPlaying] = useState(false)
   const rafRef = useRef<number>(0)
   const previewUrl = useEditorStore((s) => s.previewUrl)
-
-  const syncPausedFrameToGrid = useCallback(() => {
-    const video = videoRef.current
-    if (!video || fps <= 0) return
-
-    // Keep paused playhead values representable in the active display fps domain.
-    const sourceFrame = timeToFrameFloor(video.currentTime, fps)
-    const snappedSourceFrame = snapFrameToFpsGrid(sourceFrame, fps, displayFps, totalFrames)
-    if (snappedSourceFrame !== sourceFrame) {
-      video.currentTime = frameToTime(snappedSourceFrame, fps)
-    }
-    useEditorStore.getState().setCurrentFrame(snappedSourceFrame)
-  }, [videoRef, fps, displayFps, totalFrames])
 
   // raf loop for smooth time sync during playback
   // re-runs when previewurl changes because that's when the <video> actually mounts.
@@ -58,40 +39,47 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
     let active = false
     const tick = () => {
       if (!active) return
-      const f = fps > 0 ? timeToFrameFloor(video.currentTime, fps) : 0
+      const f = fps > 0 ? timeToFrame(video.currentTime, fps) : 0
       useEditorStore.getState().setCurrentFrame(f)
       rafRef.current = requestAnimationFrame(tick)
     }
 
-    const onPlay = () => { setPlaying(true); active = true; tick() }
-    const onPlaying = () => { setPlaying(true); if (!active) { active = true; tick() } }
-    const onPause = () => {
-      setPlaying(false)
-      active = false
-      cancelAnimationFrame(rafRef.current)
-      syncPausedFrameToGrid()
+    const onPlay = () => { setPlaying(true) }
+    const onPlaying = () => {
+      setPlaying(true)
+      if (active) return
+      active = true
+      tick()
     }
+    const onPause = () => { setPlaying(false); active = false; cancelAnimationFrame(rafRef.current) }
     const onEnded = () => { setPlaying(false); active = false; cancelAnimationFrame(rafRef.current) }
+    // sync currentFrame to where the browser actually landed after a seek.
+    // without this, currentFrame can lag behind video.currentTime (browser snaps to keyframes),
+    // causing a visible jump in the display when play starts.
     const onSeeked = () => {
-      if (video.paused && fps > 0) {
-        syncPausedFrameToGrid()
+      const state = useEditorStore.getState()
+      if (state.suppressVideoFrameSync) {
+        // clear suppress once drag ends so the NEXT seeked updates normally
+        if (!state.seekDragActive) state.setSuppressVideoFrameSync(false)
+        return
       }
-    }
-    const onTimeUpdate = () => {
       if (fps > 0) {
-        useEditorStore.getState().setCurrentFrame(timeToFrameFloor(video.currentTime, fps))
+        state.setCurrentFrame(timeToFrame(video.currentTime, fps))
       }
     }
 
     // sync initial state
     setPlaying(!video.paused)
+    if (!video.paused) {
+      active = true
+      tick()
+    }
 
     video.addEventListener('play', onPlay)
     video.addEventListener('playing', onPlaying)
     video.addEventListener('pause', onPause)
     video.addEventListener('ended', onEnded)
     video.addEventListener('seeked', onSeeked)
-    video.addEventListener('timeupdate', onTimeUpdate)
     return () => {
       active = false
       cancelAnimationFrame(rafRef.current)
@@ -100,40 +88,34 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
       video.removeEventListener('pause', onPause)
       video.removeEventListener('ended', onEnded)
       video.removeEventListener('seeked', onSeeked)
-      video.removeEventListener('timeupdate', onTimeUpdate)
     }
-  }, [videoRef, fps, previewUrl, syncPausedFrameToGrid])
+  }, [videoRef, fps, previewUrl])
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current
     if (!video) return
-    if (video.paused) tryPlay(video)
-    else video.pause()
+    if (video.paused) {
+      tryPlay(video)
+    } else {
+      video.pause()
+    }
   }, [videoRef])
 
   const stepFrame = useCallback((delta: number) => {
     const video = videoRef.current
     if (!video || fps <= 0) return
     video.pause()
-    let nextSourceFrame: number
-    if (displayFps > 0 && Math.abs(displayFps - fps) > 1e-9) {
-      const currentDisplayFrame = remapFrameIndex(currentFrame, fps, displayFps, displayTotalFrames)
-      const nextDisplayFrame = clampFrame(currentDisplayFrame + delta, displayTotalFrames)
-      nextSourceFrame = remapFrameIndex(nextDisplayFrame, displayFps, fps, totalFrames)
-    } else {
-      nextSourceFrame = clampFrame(currentFrame + delta, totalFrames)
-    }
-    video.currentTime = frameToTime(nextSourceFrame, fps)
-    useEditorStore.getState().setCurrentFrame(nextSourceFrame)
-  }, [videoRef, fps, currentFrame, totalFrames, displayFps, displayTotalFrames])
+    const { currentFrame } = useEditorStore.getState()
+    const newFrame = clampFrame(currentFrame + delta, totalFrames)
+    video.currentTime = frameToTime(newFrame, fps)
+    useEditorStore.getState().setCurrentFrame(newFrame)
+  }, [videoRef, fps, totalFrames])
 
   const skipTime = useCallback((seconds: number) => {
     const video = videoRef.current
     if (!video) return
     video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + seconds))
-    if (fps > 0) {
-      useEditorStore.getState().setCurrentFrame(timeToFrameFloor(video.currentTime, fps))
-    }
+    if (fps > 0) useEditorStore.getState().setCurrentFrame(timeToFrame(video.currentTime, fps))
   }, [videoRef, fps])
 
   /** set start/end selection, auto-swapping if needed. */
@@ -218,9 +200,8 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
 
   // format display
   const currentSeconds = fps > 0 ? currentFrame / fps : 0
-  const currentFrameDisplayOne = displayTotalFrames > 0 ? currentFrameDisplay + 1 : 0
   const timeText = showFrames
-    ? `${formatFramePadded(currentFrameDisplayOne, displayTotalFrames)} / ${formatFramePadded(displayTotalFrames, displayTotalFrames)}`
+    ? `${formatFramePadded(currentFrame, totalFrames)} / ${formatFramePadded(totalFrames > 0 ? totalFrames - 1 : 0, totalFrames)}`
     : `${formatTime(currentSeconds, duration)} / ${formatTime(duration, duration)}`
 
   return (
@@ -274,6 +255,7 @@ export const TransportBar = memo(function TransportBar({ videoRef, pressedKey, s
         >
           <Icons.ChevronRight width={16} height={16} />
         </button>
+
       </div>
 
       <div className="justify-self-end" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>

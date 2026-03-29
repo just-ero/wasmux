@@ -63,6 +63,26 @@ export function ChevronRight(props: P) {
   return <ChevronSvg {...defaults} {...props} style={{ ...(props.style ?? {}), transform: 'scaleX(-1)' }} />
 }
 
+/** chevron + vertical bar: previous keyframe */
+export function ChevronDoubleLeft({ width = 16, height = 16, ...props }: P) {
+  return (
+    <svg {...defaults} width={width} height={height} viewBox="0 0 16 16" {...props}>
+      <polyline points="9,3 4,8 9,13" />
+      <polyline points="13,3 8,8 13,13" />
+    </svg>
+  )
+}
+
+/** chevron + vertical bar: next keyframe */
+export function ChevronDoubleRight({ width = 16, height = 16, ...props }: P) {
+  return (
+    <svg {...defaults} width={width} height={height} viewBox="0 0 16 16" {...props}>
+      <polyline points="7,3 12,8 7,13" />
+      <polyline points="3,3 8,8 3,13" />
+    </svg>
+  )
+}
+
 export const Export = icon(ExportSvg)
 export const Link = icon(LinkSvg)
 export const LinkOff = icon(LinkOffSvg)

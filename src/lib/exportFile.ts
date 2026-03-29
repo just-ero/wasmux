@@ -1,6 +1,6 @@
 /** run the export pipeline. */
 
-import { getFFmpeg, resetFFmpeg } from '@/lib/ffmpeg'
+import { getFFmpeg, resetFFmpeg, setExecRunning } from '@/lib/ffmpeg'
 import { buildCommand } from '@/lib/commandBuilder'
 import { useEditorStore } from '@/stores/editorStore'
 import { useLogStore } from '@/stores/logStore'
@@ -51,6 +51,15 @@ interface FallbackPlan {
 export function isWasmMemoryFault(error: unknown): boolean {
   const text = error instanceof Error ? error.message : String(error)
   return /memory access out of bounds|out of memory|wasm memory/i.test(text)
+}
+
+export function isLikelyWasmDecodeFault(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error)
+  return /failed to get pixel format|error while decoding stream|function not implemented|conversion failed|invalid data found when processing input/i.test(text)
+}
+
+function buildGifDecodeUnsupportedMessage(codec: string): string {
+  return `GIF export failed: ffmpeg.wasm in this browser cannot decode ${codec} for this file. Try exporting mp4/webm instead.`
 }
 
 const encodeSuppressedPrefixes = [
@@ -347,6 +356,7 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
 
   if (!store.file || !store.probe) return
   if (store.isExporting) return
+  const sourceFile = store.file
 
   const pickerResult = options?.target
      ?? await chooseExportTarget(store.file.name, store.file.sourceHandle ?? null, store.probe.format, store.outputFormat)
@@ -446,6 +456,40 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
     let encodeStartedAt = Date.now()
     let stalled = false
     let retrying = false
+    let usedFallbackRetry = false
+    let sawDecodeFault = false
+
+    const retryWithFallback = async (canRetryFromMemoryFault: boolean) => {
+      const fallbackPlan = buildFallbackPlan(args, currentOutputName, {
+        isGifExport,
+        isWebmExport,
+        canRetryFromMemoryFault,
+      })
+      currentOutputName = fallbackPlan.outputName
+
+      log.updateEntry(encodeId, {
+        status: 'running',
+        detail: fallbackPlan.detail,
+      })
+      appendJobOutput(encodeId, fallbackPlan.message, 'info')
+
+      usedFallbackRetry = true
+      stalled = false
+      retrying = false
+      sawDecodeFault = false
+      lastActivityAt = Date.now()
+      lastHeartbeatReported = 0
+      lastProgress = 0
+      log.updateEntry(exportId, { progress: 0 })
+      log.updateEntry(encodeId, { progress: 0 })
+
+      resetFFmpeg()
+      const retryFFmpeg = await getFFmpeg()
+      activeFFmpeg = retryFFmpeg
+      await restoreInputFileInFs(retryFFmpeg, sourceFile.name, sourceFile.objectUrl)
+      appendJobOutput(encodeId, 'Restored source file after worker restart. Continuing retry...', 'info')
+      await executeEncode(retryFFmpeg, fallbackPlan.args)
+    }
 
     const executeEncode = async (ffmpegInstance: Awaited<ReturnType<typeof getFFmpeg>>, execArgs: string[]) => {
       encodeStartedAt = Date.now()
@@ -492,6 +536,10 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
       const onLine = ({ message }: { message: string }) => {
         lastActivityAt = Date.now()
 
+        if (isLikelyWasmDecodeFault(message)) {
+          sawDecodeFault = true
+        }
+
         if (selDuration > 0) {
           const secs = parseProgressSeconds(message)
           if (secs !== null) {
@@ -527,9 +575,11 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
 
       const detachLog = bindFFmpegJobOutput(ffmpegInstance, encodeId, onLine, shouldDisplayEncodeLogLine)
       ffmpegInstance.on('progress', onProgress)
+      setExecRunning(true)
       try {
         await ffmpegInstance.exec(['-progress', 'pipe:1', ...execArgs])
       } finally {
+        setExecRunning(false)
         detachLog()
         ffmpegInstance.off('progress', onProgress)
         window.clearInterval(heartbeat)
@@ -540,34 +590,13 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
       await executeEncode(ffmpeg, args)
     } catch (err) {
       const canRetryFromMemoryFault = isWebmExport && needsReencode && !retrying && isWasmMemoryFault(err)
-      if ((!stalled && !canRetryFromMemoryFault) || !needsReencode) throw err
+      const canRetryFromDecodeFault = isGifExport && needsReencode && !retrying && (sawDecodeFault || isLikelyWasmDecodeFault(err))
+      if (canRetryFromDecodeFault) {
+        throw new Error(buildGifDecodeUnsupportedMessage(store.probe.videoCodec || 'this codec'))
+      }
+      if ((!stalled && !canRetryFromMemoryFault && !canRetryFromDecodeFault) || !needsReencode || usedFallbackRetry) throw err
 
-      const fallbackPlan = buildFallbackPlan(args, currentOutputName, {
-        isGifExport,
-        isWebmExport,
-        canRetryFromMemoryFault,
-      })
-      currentOutputName = fallbackPlan.outputName
-
-      log.updateEntry(encodeId, {
-        status: 'running',
-        detail: fallbackPlan.detail,
-      })
-      appendJobOutput(encodeId, fallbackPlan.message, 'info')
-
-      stalled = false
-      retrying = false
-      lastActivityAt = Date.now()
-      lastHeartbeatReported = 0
-      lastProgress = 0
-      log.updateEntry(exportId, { progress: 0 })
-      log.updateEntry(encodeId, { progress: 0 })
-
-      const retryFFmpeg = await getFFmpeg()
-      activeFFmpeg = retryFFmpeg
-      await restoreInputFileInFs(retryFFmpeg, store.file.name, store.file.objectUrl)
-      appendJobOutput(encodeId, 'Restored source file after worker restart. Continuing retry...', 'info')
-      await executeEncode(retryFFmpeg, fallbackPlan.args)
+      await retryWithFallback(canRetryFromMemoryFault)
     }
 
     log.updateEntry(encodeId, { status: 'done', progress: 100 })
@@ -589,7 +618,27 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
     }
 
     if (!data || data.length === 0) {
-      throw new Error('Export produced an empty file. The encode likely failed.')
+      if (isGifExport && sawDecodeFault) {
+        throw new Error(buildGifDecodeUnsupportedMessage(store.probe.videoCodec || 'this codec'))
+      }
+      if (isGifExport && needsReencode && !usedFallbackRetry) {
+        appendJobOutput(encodeId, 'Primary GIF encode produced empty output. Retrying once with fallback profile...', 'info')
+        await retryWithFallback(false)
+
+        try {
+          data = await activeFFmpeg.readFile(currentOutputName) as Uint8Array
+        } catch (readErr) {
+          const readMsg = readErr instanceof Error ? readErr.message : String(readErr)
+          throw new Error(
+            `Fallback output file was not found in WASM FS (${currentOutputName}). ` +
+            `Read error: ${readMsg}`,
+          )
+        }
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('Export produced an empty file. The encode likely failed.')
+      }
     }
     const blob = new Blob([new Uint8Array(data)], { type: 'application/octet-stream' })
     await writeExportedFile(blob, fileHandle, fileName)
