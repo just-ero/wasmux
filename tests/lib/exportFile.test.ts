@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWebmFallbackArgs, isLikelyWasmDecodeFault, isWasmMemoryFault, parseProgressSeconds, shouldDisplayEncodeLogLine } from '@/lib/exportFile'
+import { buildWebmFallbackArgs, enforceScaleThenCropForResolutionOverride, isLikelyWasmDecodeFault, isWasmMemoryFault, parseProgressSeconds, shouldDisplayEncodeLogLine } from '@/lib/exportFile'
 
 describe('parseProgressSeconds', () => {
   it('parses ffmpeg time= output with microsecond precision', () => {
@@ -83,6 +83,55 @@ describe('buildWebmFallbackArgs', () => {
     expect(args[args.indexOf('-af') + 1]).toBe('volume=1.200')
     expect(args).toContain('-vf')
     expect(args[args.indexOf('-vf') + 1]).toBe('crop=800:600:0:0')
+  })
+})
+
+describe('enforceScaleThenCropForResolutionOverride', () => {
+  it('rewrites crop-before-scale to scale-then-crop with projected crop values', () => {
+    const args = [
+      '-i', 'input.webm',
+      '-map', '0:0',
+      '-an',
+      '-c:v', 'gif',
+      '-vf', 'crop=1153:1153:707:147,scale=384:216:flags=fast_bilinear:force_original_aspect_ratio=decrease,fps=10',
+      '-y', 'out.gif',
+    ]
+
+    const next = enforceScaleThenCropForResolutionOverride(args, {
+      sourceW: 2560,
+      sourceH: 1440,
+      crop: { x: 707, y: 147, width: 1153, height: 1153 },
+      outputW: 384,
+      outputH: 216,
+      keepAspectRatio: true,
+      videoCodec: 'gif',
+    })
+
+    const vf = next[next.indexOf('-vf') + 1]
+    expect(vf).toBe('scale=384:216:flags=fast_bilinear:force_original_aspect_ratio=decrease,crop=173:173:106:22,fps=10')
+  })
+
+  it('keeps args unchanged when vf is already scale-then-crop', () => {
+    const args = [
+      '-i', 'input.webm',
+      '-map', '0:0',
+      '-an',
+      '-c:v', 'gif',
+      '-vf', 'scale=384:216:flags=fast_bilinear:force_original_aspect_ratio=decrease,crop=173:173:106:22,fps=10',
+      '-y', 'out.gif',
+    ]
+
+    const next = enforceScaleThenCropForResolutionOverride(args, {
+      sourceW: 2560,
+      sourceH: 1440,
+      crop: { x: 707, y: 147, width: 1153, height: 1153 },
+      outputW: 384,
+      outputH: 216,
+      keepAspectRatio: true,
+      videoCodec: 'gif',
+    })
+
+    expect(next).toEqual(args)
   })
 })
 

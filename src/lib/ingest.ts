@@ -299,7 +299,8 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
         // Browser compatibility preview:
         // - transcode GIF-like video sources to h264 for <video>
         // - transcode unsupported audio codecs to aac
-        const previewName = '_preview_compat.mp4'
+        const previewNameMp4 = '_preview_compat.mp4'
+        const previewNameWebm = '_preview_compat.webm'
         stopStageTicker()
         let sawProgress = false
         let lastProgressAt = Date.now()
@@ -329,37 +330,84 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
         try {
           const videoTrackIndex = probe.videoTracks[0]?.index ?? 0
           const audioTrackIndex = probe.audioTracks[0]?.index ?? 0
-          const previewArgs = [
-            '-progress', 'pipe:1',
-            '-i', filename,
-            '-map', `0:${videoTrackIndex}`,
-          ]
+          const makePreviewArgs = (videoCompatCodec: 'libx264' | 'mpeg4' | 'libvpx' | null) => {
+            const previewArgs = [
+              '-progress', 'pipe:1',
+              '-i', filename,
+              '-map', `0:${videoTrackIndex}`,
+            ]
 
-          if (hasAudioTrack) {
-            previewArgs.push('-map', `0:${audioTrackIndex}`)
+            if (hasAudioTrack) {
+              previewArgs.push('-map', `0:${audioTrackIndex}`)
+            }
+
+            if (needsVideoCompatPreview) {
+              if (videoCompatCodec === 'libx264') {
+                // Ensure yuv420p-compatible even dimensions for browser mp4 playback.
+                previewArgs.push('-vf', 'scale=ceil(iw/2)*2:ceil(ih/2)*2:flags=fast_bilinear', '-c:v', 'libx264', '-pix_fmt', 'yuv420p')
+              } else if (videoCompatCodec === 'mpeg4') {
+                previewArgs.push('-vf', 'scale=ceil(iw/2)*2:ceil(ih/2)*2:flags=fast_bilinear', '-c:v', 'mpeg4')
+              } else if (videoCompatCodec === 'libvpx') {
+                previewArgs.push('-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8')
+              }
+            } else {
+              previewArgs.push('-c:v', 'copy')
+            }
+
+            if (hasAudioTrack) {
+              if (videoCompatCodec === 'libvpx') {
+                previewArgs.push('-c:a', needsAudioCompatPreview ? 'libvorbis' : 'copy')
+              } else {
+                previewArgs.push('-c:a', needsAudioCompatPreview ? 'aac' : 'copy')
+              }
+            } else {
+              previewArgs.push('-an')
+            }
+
+            if (videoCompatCodec === 'libvpx') {
+              previewArgs.push(previewNameWebm)
+            } else {
+              previewArgs.push('-movflags', '+faststart', previewNameMp4)
+            }
+            return previewArgs
           }
-
-          if (needsVideoCompatPreview) {
-            previewArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p')
-          } else {
-            previewArgs.push('-c:v', 'copy')
-          }
-
-          if (hasAudioTrack) {
-            previewArgs.push('-c:a', needsAudioCompatPreview ? 'aac' : 'copy')
-          } else {
-            previewArgs.push('-an')
-          }
-
-          previewArgs.push('-movflags', '+faststart', previewName)
 
           setExecRunning(true)
-          await ffmpeg.exec(previewArgs)
+          if (needsVideoCompatPreview) {
+            let previewData: Uint8Array | null = null
+            let previewMime: string | null = null
 
-          const data = await ffmpeg.readFile(previewName)
-          const blob = new Blob([data as BlobPart], { type: 'video/mp4' })
-          const previewUrl = URL.createObjectURL(blob)
-          store.setPreviewUrl(previewUrl)
+            try {
+              log.appendOutput(PREVIEW_ID, 'preview attempt: mp4/libx264', 'info')
+              await ffmpeg.exec(makePreviewArgs('libx264'))
+              previewData = await ffmpeg.readFile(previewNameMp4) as Uint8Array
+              previewMime = 'video/mp4'
+            } catch {
+              try {
+                // Some ffmpeg.wasm builds do not include libx264; retry with mpeg4.
+                log.appendOutput(PREVIEW_ID, 'preview attempt: mp4/mpeg4', 'info')
+                await ffmpeg.exec(makePreviewArgs('mpeg4'))
+                previewData = await ffmpeg.readFile(previewNameMp4) as Uint8Array
+                previewMime = 'video/mp4'
+              } catch {
+                // Last fallback for broad wasm support: vp8 webm preview.
+                log.appendOutput(PREVIEW_ID, 'preview attempt: webm/libvpx', 'info')
+                await ffmpeg.exec(makePreviewArgs('libvpx'))
+                previewData = await ffmpeg.readFile(previewNameWebm) as Uint8Array
+                previewMime = 'video/webm'
+              }
+            }
+
+            const blob = new Blob([previewData as BlobPart], { type: previewMime ?? 'application/octet-stream' })
+            const previewUrl = URL.createObjectURL(blob)
+            store.setPreviewUrl(previewUrl)
+          } else {
+            await ffmpeg.exec(makePreviewArgs(null))
+            const data = await ffmpeg.readFile(previewNameMp4)
+            const blob = new Blob([data as BlobPart], { type: 'video/mp4' })
+            const previewUrl = URL.createObjectURL(blob)
+            store.setPreviewUrl(previewUrl)
+          }
           setIngestProgress(95)
           log.updateEntry(PREVIEW_ID, {
             status: 'done',
@@ -379,7 +427,8 @@ export async function ingestFile(file: File, objectUrl: string, sourceHandle?: N
           setExecRunning(false)
           clearInterval(waitingTicker)
           ffmpeg.off('progress', onPreviewProgress)
-          await ffmpeg.deleteFile(previewName).catch(() => {})
+          await ffmpeg.deleteFile(previewNameMp4).catch(() => {})
+          await ffmpeg.deleteFile(previewNameWebm).catch(() => {})
         }
       }
     }

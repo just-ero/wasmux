@@ -11,6 +11,7 @@ import { isErrorOutputLine } from '@/core/output/normalize'
 import { appendJobOutput, bindFFmpegJobOutput } from '@/lib/jobOutput'
 import { isSupportedOutputExtension, resolveOutputExtension } from '@/lib/outputFormats'
 import { showNativeSaveFilePicker, supportsNativeSaveFilePicker } from '@/lib/fileSystemAccess'
+import type { CropRegion } from '@/types/editor'
 
 function getPickerAccept(extension: Exclude<OutputFormat, 'source'>): Record<string, string[]> {
   // use octet-stream so chrome does not silently hide uncommon extensions.
@@ -201,6 +202,175 @@ function extractFallbackArgs(
   }
 
   return { passthrough, sourceVf, sourceAf }
+}
+
+function hasEvenDimensionRequirement(codec: string): boolean {
+  return codec === 'libx264' || codec === 'mpeg4' || codec === 'libvpx-vp9' || codec === 'libvpx'
+}
+
+function normalizeRequestedDimension(value: number | null, codec: string): number | null {
+  if (value === null) return null
+  const floored = Math.max(1, Math.floor(value))
+  if (!hasEvenDimensionRequirement(codec)) return floored
+  return floored % 2 === 0 ? floored : Math.max(2, floored - 1)
+}
+
+function clampCropToBounds(
+  crop: { x: number; y: number; width: number; height: number },
+  sourceW: number,
+  sourceH: number,
+) {
+  const minSize = 1
+  const x = Math.max(0, Math.min(sourceW - minSize, crop.x))
+  const y = Math.max(0, Math.min(sourceH - minSize, crop.y))
+  const width = Math.max(minSize, Math.min(sourceW - x, crop.width))
+  const height = Math.max(minSize, Math.min(sourceH - y, crop.height))
+  return { x, y, width, height }
+}
+
+function normalizeCropForCodec(
+  crop: { x: number; y: number; width: number; height: number },
+  codec: string,
+  sourceW: number,
+  sourceH: number,
+) {
+  if (!hasEvenDimensionRequirement(codec)) return crop
+
+  const even = (n: number) => (n % 2 === 0 ? n : n - 1)
+  const x = Math.max(0, even(crop.x))
+  const y = Math.max(0, even(crop.y))
+  const maxWidth = Math.max(2, sourceW - x)
+  const maxHeight = Math.max(2, sourceH - y)
+  const width = Math.max(2, Math.min(even(crop.width), even(maxWidth)))
+  const height = Math.max(2, Math.min(even(crop.height), even(maxHeight)))
+  return { x, y, width, height }
+}
+
+function projectCropToScaledSpace(
+  crop: { x: number; y: number; width: number; height: number },
+  sourceW: number,
+  sourceH: number,
+  scaledW: number,
+  scaledH: number,
+): { x: number; y: number; width: number; height: number } {
+  const safeSourceW = Math.max(1, sourceW)
+  const safeSourceH = Math.max(1, sourceH)
+  const x1 = Math.round((crop.x / safeSourceW) * scaledW)
+  const y1 = Math.round((crop.y / safeSourceH) * scaledH)
+  const x2 = Math.round(((crop.x + crop.width) / safeSourceW) * scaledW)
+  const y2 = Math.round(((crop.y + crop.height) / safeSourceH) * scaledH)
+
+  return {
+    x: x1,
+    y: y1,
+    width: Math.max(1, x2 - x1),
+    height: Math.max(1, y2 - y1),
+  }
+}
+
+function resolveScaledDimensions(
+  sourceW: number,
+  sourceH: number,
+  outputW: number | null,
+  outputH: number | null,
+  keepAspectRatio: boolean,
+  codec: string,
+): { width: number; height: number } {
+  if (outputW === null && outputH === null) {
+    return { width: sourceW, height: sourceH }
+  }
+
+  const normalizedWidth = normalizeRequestedDimension(outputW, codec)
+  const normalizedHeight = normalizeRequestedDimension(outputH, codec)
+  const sourceAspect = sourceH > 0 ? sourceW / sourceH : 1
+
+  if (keepAspectRatio) {
+    if (normalizedWidth !== null && normalizedHeight !== null) {
+      const fitScale = Math.min(normalizedWidth / Math.max(1, sourceW), normalizedHeight / Math.max(1, sourceH))
+      return {
+        width: Math.max(1, Math.round(sourceW * fitScale)),
+        height: Math.max(1, Math.round(sourceH * fitScale)),
+      }
+    }
+
+    if (normalizedWidth !== null) {
+      return {
+        width: normalizedWidth,
+        height: Math.max(1, Math.round(normalizedWidth / sourceAspect)),
+      }
+    }
+
+    return {
+      width: Math.max(1, Math.round((normalizedHeight ?? sourceH) * sourceAspect)),
+      height: Math.max(1, normalizedHeight ?? sourceH),
+    }
+  }
+
+  return {
+    width: Math.max(1, normalizedWidth ?? sourceW),
+    height: Math.max(1, normalizedHeight ?? sourceH),
+  }
+}
+
+function findArgValue(args: string[], flag: string): string | null {
+  const idx = args.indexOf(flag)
+  if (idx < 0 || idx + 1 >= args.length) return null
+  const value = args[idx + 1]
+  return value.startsWith('-') ? null : value
+}
+
+export function enforceScaleThenCropForResolutionOverride(
+  args: string[],
+  options: {
+    sourceW: number
+    sourceH: number
+    crop: CropRegion | null
+    outputW: number | null
+    outputH: number | null
+    keepAspectRatio: boolean
+    videoCodec: string
+  },
+): string[] {
+  if (!options.crop) return args
+  if (options.outputW === null && options.outputH === null) return args
+
+  const vfIdx = args.indexOf('-vf')
+  if (vfIdx < 0 || vfIdx + 1 >= args.length) return args
+
+  const vf = args[vfIdx + 1]
+  const parts = vf.split(',').map((part) => part.trim()).filter(Boolean)
+  const cropIdx = parts.findIndex((part) => part.startsWith('crop='))
+  const firstScaleIdx = parts.findIndex((part) => part.startsWith('scale='))
+  if (cropIdx < 0 || firstScaleIdx < 0 || cropIdx > firstScaleIdx) return args
+
+  const { width: scaledW, height: scaledH } = resolveScaledDimensions(
+    options.sourceW,
+    options.sourceH,
+    options.outputW,
+    options.outputH,
+    options.keepAspectRatio,
+    options.videoCodec,
+  )
+
+  const clamped = clampCropToBounds({
+    x: Math.round(options.crop.x),
+    y: Math.round(options.crop.y),
+    width: Math.round(options.crop.width),
+    height: Math.round(options.crop.height),
+  }, options.sourceW, options.sourceH)
+
+  const projected = projectCropToScaledSpace(clamped, options.sourceW, options.sourceH, scaledW, scaledH)
+  const projectedClamped = clampCropToBounds(projected, scaledW, scaledH)
+  const normalized = normalizeCropForCodec(projectedClamped, options.videoCodec, scaledW, scaledH)
+
+  const rebuilt = [...parts]
+  rebuilt.splice(cropIdx, 1)
+  const scaleInsertIdx = rebuilt.findIndex((part) => part.startsWith('scale='))
+  rebuilt.splice(scaleInsertIdx + 1, 0, `crop=${normalized.width}:${normalized.height}:${normalized.x}:${normalized.y}`)
+
+  const nextArgs = [...args]
+  nextArgs[vfIdx + 1] = rebuilt.join(',')
+  return nextArgs
 }
 
 export function buildSafeFallbackArgs(args: string[], fallbackOutputName: string): string[] {
@@ -425,10 +595,20 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
     let activeFFmpeg = ffmpeg
 
     const { args, outputName, needsReencode } = buildCommand(format)
+    const effectiveVideoCodec = findArgValue(args, '-c:v') ?? store.videoProps.codec
+    const effectiveArgs = enforceScaleThenCropForResolutionOverride(args, {
+      sourceW: store.probe.width,
+      sourceH: store.probe.height,
+      crop: store.crop,
+      outputW: store.videoProps.width,
+      outputH: store.videoProps.height,
+      keepAspectRatio: store.videoProps.keepAspectRatio,
+      videoCodec: effectiveVideoCodec,
+    })
     let currentOutputName = outputName
 
     // Show full command for reference, but in a cleaner form with defaults omitted
-    const displayArgs = filterDefaultArgs([...args])
+    const displayArgs = filterDefaultArgs([...effectiveArgs])
     appendJobOutput(prepareId, `ffmpeg ${displayArgs.join(' ')}`, 'stdout')
 
     // Warn about WebM encoding performance in wasm
@@ -460,7 +640,7 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
     let sawDecodeFault = false
 
     const retryWithFallback = async (canRetryFromMemoryFault: boolean) => {
-      const fallbackPlan = buildFallbackPlan(args, currentOutputName, {
+      const fallbackPlan = buildFallbackPlan(effectiveArgs, currentOutputName, {
         isGifExport,
         isWebmExport,
         canRetryFromMemoryFault,
@@ -587,7 +767,7 @@ export async function exportFile(options?: ExportOptions): Promise<void> {
     }
 
     try {
-      await executeEncode(ffmpeg, args)
+      await executeEncode(ffmpeg, effectiveArgs)
     } catch (err) {
       const canRetryFromMemoryFault = isWebmExport && needsReencode && !retrying && isWasmMemoryFault(err)
       const canRetryFromDecodeFault = isGifExport && needsReencode && !retrying && (sawDecodeFault || isLikelyWasmDecodeFault(err))

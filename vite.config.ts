@@ -72,8 +72,9 @@ function corpHeaderPlugin() {
 }
 
 export default defineConfig(({ mode }) => ({
-  // Serve from /wasmux on production builds for GitHub Pages subpath hosting.
-  base: mode === 'production' ? '/wasmux/' : '/',
+  // Use /wasmux/ only for explicit GitHub Pages builds.
+  // Local production preview should stay at root (/).
+  base: mode === 'production' && process.env.WASMUX_BASE_PATH === '/wasmux/' ? '/wasmux/' : '/',
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },

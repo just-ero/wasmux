@@ -324,6 +324,46 @@ describe('buildCommand', () => {
       const vfIdx = args.indexOf('-vf')
       expect(args[vfIdx + 1]).toContain('crop=801:601:101:51')
     })
+
+    it('applies crop in scaled-space when resolution override is active', () => {
+      setup({
+        probe: { width: 1920, height: 1080 },
+        videoProps: {
+          width: 384,
+          height: 216,
+          keepAspectRatio: true,
+          codec: 'copy',
+        },
+        // Source-space crop corresponding to ui crop 106,22 173x173 on a 0.2x scale.
+        crop: { x: 530, y: 110, width: 865, height: 865 },
+      })
+
+      const { args } = buildCommand('mp4')
+      const vfIdx = args.indexOf('-vf')
+      const vf = args[vfIdx + 1]
+
+      expect(vf).toBe('scale=384:216:flags=fast_bilinear:force_original_aspect_ratio=decrease,crop=172:172:106:22')
+    })
+
+    it('applies scale-then-crop in gif exports with resolution override', () => {
+      setup({
+        probe: { width: 1920, height: 1080 },
+        videoProps: {
+          width: 384,
+          height: 216,
+          keepAspectRatio: true,
+          codec: 'copy',
+          fps: 12,
+        },
+        crop: { x: 530, y: 110, width: 865, height: 865 },
+      })
+
+      const { args } = buildCommand('gif')
+      const vfIdx = args.indexOf('-vf')
+      const vf = args[vfIdx + 1]
+
+      expect(vf).toBe('scale=384:216:flags=fast_bilinear:force_original_aspect_ratio=decrease,crop=173:173:106:22,fps=12')
+    })
   })
 
   describe('codecs', () => {

@@ -60,6 +60,28 @@ function clampCropToSource(
   return { x, y, width, height }
 }
 
+function projectCropToScaledSpace(
+  crop: { x: number; y: number; width: number; height: number },
+  sourceW: number,
+  sourceH: number,
+  scaledW: number,
+  scaledH: number,
+): { x: number; y: number; width: number; height: number } {
+  const safeSourceW = Math.max(1, sourceW)
+  const safeSourceH = Math.max(1, sourceH)
+  const x1 = Math.round((crop.x / safeSourceW) * scaledW)
+  const y1 = Math.round((crop.y / safeSourceH) * scaledH)
+  const x2 = Math.round(((crop.x + crop.width) / safeSourceW) * scaledW)
+  const y2 = Math.round(((crop.y + crop.height) / safeSourceH) * scaledH)
+
+  return {
+    x: x1,
+    y: y1,
+    width: Math.max(1, x2 - x1),
+    height: Math.max(1, y2 - y1),
+  }
+}
+
 function hasEvenDimensionRequirement(codec: string): boolean {
   return codec === 'libx264' || codec === 'mpeg4' || codec === 'libvpx-vp9' || codec === 'libvpx'
 }
@@ -264,8 +286,50 @@ export function buildCommand(format: OutputFormat): BuildResult {
   // video filters
   const vFilters: string[] = []
   const aFilters: string[] = []
-  let filteredVideoW = sourceW
-  let filteredVideoH = sourceH
+  let scaledVideoW = sourceW
+  let scaledVideoH = sourceH
+
+  if (!isGifOutput && hasFpsChange) {
+    vFilters.push(`fps=${videoProps.fps}`)
+  }
+
+  if (hasScaleChange) {
+    const normalizedWidth = normalizeRequestedDimension(videoProps.width, resolvedVideoCodec)
+    const normalizedHeight = normalizeRequestedDimension(videoProps.height, resolvedVideoCodec)
+    const sourceAspect = sourceH > 0 ? sourceW / sourceH : 1
+
+    if (videoProps.keepAspectRatio) {
+      if (normalizedWidth !== null && normalizedHeight !== null) {
+        const fitScale = Math.min(normalizedWidth / Math.max(1, sourceW), normalizedHeight / Math.max(1, sourceH))
+        scaledVideoW = Math.max(1, Math.round(sourceW * fitScale))
+        scaledVideoH = Math.max(1, Math.round(sourceH * fitScale))
+        vFilters.push(`scale=${normalizedWidth}:${normalizedHeight}:flags=fast_bilinear:force_original_aspect_ratio=decrease`)
+      } else if (normalizedWidth !== null) {
+        const derivedHeight = normalizeRequestedDimension(Math.round(normalizedWidth / sourceAspect), resolvedVideoCodec)
+        scaledVideoW = normalizedWidth
+        scaledVideoH = Math.max(1, derivedHeight ?? Math.round(normalizedWidth / sourceAspect))
+        vFilters.push(`scale=${normalizedWidth}:${derivedHeight ?? -1}:flags=fast_bilinear`)
+      } else if (normalizedHeight !== null) {
+        const derivedWidth = normalizeRequestedDimension(Math.round(normalizedHeight * sourceAspect), resolvedVideoCodec)
+        scaledVideoW = Math.max(1, derivedWidth ?? Math.round(normalizedHeight * sourceAspect))
+        scaledVideoH = normalizedHeight
+        vFilters.push(`scale=${derivedWidth ?? -1}:${normalizedHeight}:flags=fast_bilinear`)
+      }
+    } else if (normalizedWidth !== null && normalizedHeight !== null) {
+      // Unlocked mode stretches to exact dimensions, including non-native aspect ratios.
+      scaledVideoW = normalizedWidth
+      scaledVideoH = normalizedHeight
+      vFilters.push(`scale=${normalizedWidth}:${normalizedHeight}:flags=fast_bilinear`)
+    } else if (normalizedWidth !== null) {
+      scaledVideoW = normalizedWidth
+      scaledVideoH = Math.max(1, Math.round(normalizedWidth / sourceAspect))
+      vFilters.push(`scale=${normalizedWidth}:-1:flags=fast_bilinear`)
+    } else if (normalizedHeight !== null) {
+      scaledVideoW = Math.max(1, Math.round(normalizedHeight * sourceAspect))
+      scaledVideoH = normalizedHeight
+      vFilters.push(`scale=-1:${normalizedHeight}:flags=fast_bilinear`)
+    }
+  }
 
   if (hasCrop) {
     const clamped = clampCropToSource({
@@ -275,38 +339,15 @@ export function buildCommand(format: OutputFormat): BuildResult {
       height: Math.round(crop.height),
     }, sourceW, sourceH)
 
-    const normalized = normalizeCropForCodec(clamped, resolvedVideoCodec, sourceW, sourceH)
-    vFilters.push(`crop=${normalized.width}:${normalized.height}:${normalized.x}:${normalized.y}`)
-    filteredVideoW = normalized.width
-    filteredVideoH = normalized.height
-  }
-
-  if (!isGifOutput && hasFpsChange) {
-    vFilters.push(`fps=${videoProps.fps}`)
-  }
-
-  if (hasScaleChange) {
-    const normalizedWidth = normalizeRequestedDimension(videoProps.width, resolvedVideoCodec)
-    const normalizedHeight = normalizeRequestedDimension(videoProps.height, resolvedVideoCodec)
-    const sourceAspect = filteredVideoH > 0 ? filteredVideoW / filteredVideoH : 1
-
-    if (videoProps.keepAspectRatio) {
-      if (normalizedWidth !== null && normalizedHeight !== null) {
-        vFilters.push(`scale=${normalizedWidth}:${normalizedHeight}:flags=fast_bilinear:force_original_aspect_ratio=decrease`)
-      } else if (normalizedWidth !== null) {
-        const derivedHeight = normalizeRequestedDimension(Math.round(normalizedWidth / sourceAspect), resolvedVideoCodec)
-        vFilters.push(`scale=${normalizedWidth}:${derivedHeight ?? -1}:flags=fast_bilinear`)
-      } else if (normalizedHeight !== null) {
-        const derivedWidth = normalizeRequestedDimension(Math.round(normalizedHeight * sourceAspect), resolvedVideoCodec)
-        vFilters.push(`scale=${derivedWidth ?? -1}:${normalizedHeight}:flags=fast_bilinear`)
-      }
-    } else if (normalizedWidth !== null && normalizedHeight !== null) {
-      // Unlocked mode stretches to exact dimensions, including non-native aspect ratios.
-      vFilters.push(`scale=${normalizedWidth}:${normalizedHeight}:flags=fast_bilinear`)
-    } else if (normalizedWidth !== null) {
-      vFilters.push(`scale=${normalizedWidth}:-1:flags=fast_bilinear`)
-    } else if (normalizedHeight !== null) {
-      vFilters.push(`scale=-1:${normalizedHeight}:flags=fast_bilinear`)
+    const cropBeforeScale = !hasScaleChange
+    if (cropBeforeScale) {
+      const normalized = normalizeCropForCodec(clamped, resolvedVideoCodec, sourceW, sourceH)
+      vFilters.push(`crop=${normalized.width}:${normalized.height}:${normalized.x}:${normalized.y}`)
+    } else {
+      const projected = projectCropToScaledSpace(clamped, sourceW, sourceH, scaledVideoW, scaledVideoH)
+      const projectedClamped = clampCropToSource(projected, scaledVideoW, scaledVideoH)
+      const normalized = normalizeCropForCodec(projectedClamped, resolvedVideoCodec, scaledVideoW, scaledVideoH)
+      vFilters.push(`crop=${normalized.width}:${normalized.height}:${normalized.x}:${normalized.y}`)
     }
   }
 
